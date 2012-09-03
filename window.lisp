@@ -836,6 +836,15 @@ needed."
   (dformat 3 "Kill client~%")
   (xlib:kill-client *display* (xlib:window-id window)))
 
+(defun window-transparency (window)
+  "Return the window transparency"
+  (xlib:window-transparency (window-xwin window)))
+  
+(defun (setf window-transparency) (value window)
+  "Set the window transparency"
+  (setf (xlib:window-transparency (window-xwin window)) value))
+
+
 (defun select-window-from-menu (windows fmt)
   "Allow the user to select a window from the list passed in @var{windows}.  The
 @var{fmt} argument specifies the window formatting used.  Returns the window
@@ -848,7 +857,6 @@ selected."
                             (or (position (current-window) windows) 0))))
 
 ;;; Window commands
-
 (defcommand delete-window (&optional (window (current-window))) ()
   "Delete a window. By default delete the current window. This is a
 request sent to the window. The window's client may decide not to

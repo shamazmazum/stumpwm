@@ -20,7 +20,8 @@
   :description "A tiling, keyboard driven window manager" 
   :serial t
   :depends-on (:cl-ppcre #-(or cmu clisp) :clx :clx-truetype #+sbcl :sb-posix)
-  :components ((:file "package")
+  :components ((:file "xlib-utils")
+               (:file "package")
 	       (:file "primitives")
                (:file "workarounds")
 	       (:file "wrappers")
