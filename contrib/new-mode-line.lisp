@@ -30,29 +30,31 @@ each mode-line update."
       (:once (update-widget widget))
       (:always nil)
       (t (setf (widget-timer widget)
-                       (run-with-timer 0 interval #'update-widget widget))))))
+                       (run-with-timer 0 interval #'update-widget widget))))
+    widget))
 
 (defun update-widget (widget)
   "Redraws the widget"
   (setf (widget-value widget)
-        (funcall (widget-func widget))))
+        (string-trim (list #\Space #\Tab #\Newline) (funcall (widget-func widget)))))
 
 (defun update-always-widgets ()
   "Updates all widgets with :always interval"
-  (dolist (widget (remove :always *widgets* :test-not #'eq))
-    (update-widget widget)))
+  (mapc #'update-widget (remove :always *widgets* :test-not #'eq :key #'widget-interval)))
 
 (defun make-new-mode-line (mode-line funcs)
   "Tears down the old mode-line and sets up the new one"
   (dolist (widget *widgets*)
     (when (timer-p (widget-timer widget))
       (cancel-timer (widget-timer widget))))
+  (setf *widgets* nil)
   (multiple-value-bind (timeouts format)
       (parse-mode-line mode-line)
     (setf *format* format)
     (loop for timeout in timeouts
        for func in funcs
-       do (push (make-widget timeout func) *widgets*))))
+       do (push (make-widget timeout func) *widgets*)))
+  (setf *widgets* (nreverse *widgets*)))
 
 (defun parse-mode-line (mode-line)
   "Parses the mode-line format string. Returns (values TIMEOUTS FORMAT)"
@@ -62,6 +64,8 @@ each mode-line update."
     (flet ((write-format-char (c)
              (setf (aref format pos) c)
              (incf pos))
+           (finish-format ()
+             (setf format (subseq format 0 pos)))
            (read-timeout (s)
              ;; First check if it's a simple not-really-interval
              (ecase (peek-char nil s)
@@ -71,14 +75,15 @@ each mode-line update."
                     :always)
                ((#\0 #\1 #\2 #\3 #\4 #\5 #\6 #\7 #\8 #\9)
                 ;; It's not. Read the interval-string
-                (let ((timeout-str (with-output-to-string (timeout-str)
-                                     (loop with c = (read-char s)
+                (let ((timeout-str (with-output-to-string (timeout-stream)
+                                     (loop named timeout-reader
+                                        for c = (read-char s)
                                         do (ecase c
                                              ((#\i #\s #\m #\h #\d)
-                                              (write-char c timeout-str)
-                                              (return))
+                                              (write-char c timeout-stream)
+                                              (return-from timeout-reader))
                                              ((#\0 #\1 #\2 #\3 #\4 #\5 #\6 #\7 #\8 #\9 #\.)
-                                              (write-char c timeout-str)))))))
+                                              (write-char c timeout-stream)))))))
                   ;; Split
                   (let ((number (read-from-string timeout-str nil nil
                                                   :end (1- (length timeout-str))))
@@ -107,18 +112,21 @@ each mode-line update."
                       (#\%
                        (read-char mode-line)
                        (write-format-char #\%))
-                      ;; Literal character
+                      ;; A widget
                       (t
                        (push (read-timeout mode-line) timeouts)
                        (write-format-char #\~)
                        (write-format-char #\A))))
-               (t (write-char c))))))
+               ;; Literal character
+               (t (write-format-char c))))))
+      (finish-format)
       (values (nreverse timeouts) format))))
 
-(defun fmt-new-mode-line ()
+(defun fmt-new-mode-line (ml)
+  (declare (ignore ml))
   "Hook to the existing mode-line system"
   (update-always-widgets)
-  (format nil *format* (mapcar #'widget-value *widgets*)))
+  (apply #'format nil *format* (mapcar #'widget-value *widgets*)))
 
 ;; For User API
 (defmacro stumpwm::set-mode-line (format &rest funcs)
@@ -138,5 +146,5 @@ Special character sequences:
         h - hour
         d - day"
   `(make-new-mode-line ,format
-                       ,(loop for func in funcs
-                           collect `(lambda () ,func))))
+                       (list ,@(loop for func in funcs
+                                  collect `(lambda () ,func)))))
