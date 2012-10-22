@@ -36,7 +36,7 @@ each mode-line update."
 (defun update-widget (widget)
   "Redraws the widget"
   (setf (widget-value widget)
-        (funcall (widget-func widget))))
+        (string-trim (list #\Space #\Tab #\Newline) (funcall (widget-func widget)))))
 
 (defun update-always-widgets ()
   "Updates all widgets with :always interval"
