@@ -269,7 +269,7 @@ See *menu-map* for menu bindings."
   (check-type initial-selection integer)
   (check-type input-does (or (member :nothing :search :filter)
                              (cons (member :search :filter :generate)
-                                   function)))
+                                   (cons function nil))))
   (check-type allow-literal boolean)
   (let* ((input-action (if (listp input-does)
                            input-does
