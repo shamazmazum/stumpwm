@@ -26,8 +26,6 @@
 
 (in-package #:stumpwm)
 
-(declaim (optimize (safety 3) (debug 3) (speed 0)))
-
 (export '(select-from-menu))
 
 (defvar *menu-map* nil
