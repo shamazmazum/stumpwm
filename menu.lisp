@@ -59,7 +59,11 @@
 
 (defstruct menu-state
   prompt selected view-start view-end allow-literal
-  input-does options current-options current-input)
+  input-action options current-options
+  (current-input (make-array 10
+                             :element-type 'character
+                             :adjustable t
+                             :fill-pointer 0)))
 
 (defun make-menu-option (value)
   (make-menu-option% :name (if (listp value)
@@ -72,7 +76,8 @@
 on current view and new selection."
   (let ((len (length (menu-state-current-options menu))))
     (setf (menu-state-selected menu)
-          (cond ((< (menu-state-selected menu) 0) (1- len))
+          (cond ((not (menu-state-selected menu)) nil)
+                ((< (menu-state-selected menu) 0) (1- len))
                 ((>= (menu-state-selected menu) len) 0)
                 (t (menu-state-selected menu))))
     (when (and *menu-maximum-height*
@@ -97,36 +102,44 @@ on current view and new selection."
                              (menu-state-view-end menu)))))))))
 
 (defun menu-up (menu)
-  (decf (menu-state-selected menu))
-  (bound-check-menu menu))
+  (when (menu-state-selected menu)
+    (decf (menu-state-selected menu))
+    (bound-check-menu menu)))
 
 (defun menu-down (menu)
-  (incf (menu-state-selected menu))
-  (bound-check-menu menu))
+  (when (menu-state-selected menu)
+    (incf (menu-state-selected menu))
+    (bound-check-menu menu)))
 
 (defun menu-scroll-up (menu)
-  (decf (menu-state-selected menu) *menu-scrolling-step*)
-  (bound-check-menu menu))
+  (when (menu-state-selected menu)
+    (decf (menu-state-selected menu) *menu-scrolling-step*)
+    (bound-check-menu menu)))
 
 (defun menu-scroll-down (menu)
-  (incf (menu-state-selected menu) *menu-scrolling-step*)
-  (bound-check-menu menu))
+  (when (menu-state-selected menu)
+    (incf (menu-state-selected menu) *menu-scrolling-step*)
+    (bound-check-menu menu)))
 
 (defun menu-page-up (menu)
-  (when *menu-maximum-height* ;;No scrolling = no page up/down
-    (decf (menu-state-selected menu) *menu-maximum-height*)
-    (let ((*menu-scrolling-step* *menu-maximum-height*))
-      (bound-check-menu menu))))
+  (when (menu-state-selected menu)
+    (when *menu-maximum-height* ;;No scrolling = no page up/down
+      (decf (menu-state-selected menu) *menu-maximum-height*)
+      (let ((*menu-scrolling-step* *menu-maximum-height*))
+        (bound-check-menu menu)))))
 
 (defun menu-page-down (menu)
-  (when *menu-maximum-height*
-    (incf (menu-state-selected menu) *menu-maximum-height*)
-    (let ((*menu-scrolling-step* *menu-maximum-height*))
-      (bound-check-menu menu))))
+  (when (menu-state-selected menu)
+    (when *menu-maximum-height*
+      (incf (menu-state-selected menu) *menu-maximum-height*)
+      (let ((*menu-scrolling-step* *menu-maximum-height*))
+        (bound-check-menu menu)))))
 
 
 (defun menu-finish (menu)
-  (throw :menu-quit (menu-option-value (nth (menu-state-selected menu) (menu-state-current-options menu)))))
+  (throw :menu-quit (if (menu-state-selected menu)
+                        (menu-option-value (elt (menu-state-current-options menu) (menu-state-selected menu)))
+                        nil)))
 
 (defun menu-abort (menu)
   (declare (ignore menu))
@@ -148,11 +161,11 @@ backspace or F9), return it otherwise return nil"
 (defun menu-backspace (menu)
   (when (> (fill-pointer (menu-state-current-input menu)) 0)
     (vector-pop (menu-state-current-input menu))
-    (menu-input menu (menu-state-input-does menu) nil)))
+    (menu-input menu nil)))
 
 (defun menu-complete-prefix (menu)
-  (unless (eq (menu-state-input-does menu) :nothing)
-    (let* ((common-prefix (common-prefix (mapcar #'menu-option-name (menu-state-current-options menu))))
+  (unless (eq (first (menu-state-input-action menu)) :nothing)
+    (let* ((common-prefix (common-prefix (map 'vector #'menu-option-name (menu-state-current-options menu))))
            (common-length (length common-prefix)))
       (when (> common-length
                (length (menu-state-current-input menu)))
@@ -161,50 +174,82 @@ backspace or F9), return it otherwise return nil"
               common-prefix)))))
 
 (defun common-prefix (strings)
-  (let ((common-chars (loop
-                         for i below (reduce #'min (mapcar #'length strings))
-                         while (every (lambda (s) (eq (char s i)
-                                                      (char (first strings) i)))
-                                      (rest strings))
-                         finally (return i))))
-    (subseq (first strings) 0 common-chars)))
+  (case (length strings)
+    (0 "")
+    (1 (elt strings 0))
+    (t (let ((common-chars (loop
+                              for i below (reduce #'min (map 'vector #'length strings))
+                              while (every (lambda (s) (eq (char s i)
+                                                           (char (elt strings 0) i)))
+                                           (subseq strings 1))
+                              finally (return i))))
+         (subseq (elt strings 0) 0 common-chars)))))
 
-(defgeneric menu-input (menu action key-seq)
-  (:method :around ((menu menu-state) (input-does (eql :nothing)) (key-seq key))
-    "Ignore the input if told so"
-    nil)
-  (:method ((menu menu-state) (input-does (eql :nothing)) (key-seq key))
-    "Ignore the input if told so"
-    nil)
-  (:method :before ((menu menu-state) input-does (key-seq key))
-    "Append the input to menu's buffer"
-    (declare (ignore input-does))
+(defun menu-input (menu key-seq &aux (action (first (menu-state-input-action menu))))
+  (unless (eq action :nothing)
+    ;; First append the new character
     (let ((input-char (and key-seq (get-input-char key-seq))))
       (when input-char
-        (vector-push-extend input-char (menu-state-current-input menu))))))
+        (vector-push-extend input-char (menu-state-current-input menu)))
+      (ecase action
+        ;; The mode is to use input to generate options
+        (:generate
+         (setf (menu-state-current-options menu)
+               (funcall (second (menu-state-input-action menu))
+                        (menu-state-current-input menu))))
+        ;; The mode is to use pre-existing options
+        ((:search :filter)
+         ;; Some common code
+         (let* ((options (menu-state-options menu))
+                (strings (map 'vector #'menu-option-name options))
+                (input (menu-state-current-input menu))
+                (max (ecase action
+                       (:search 1)
+                       (:filter (if *menu-maximum-height*
+                                    (+ *menu-maximum-height* 1)
+                                    (length options)))))
+                (found-indexes (funcall (second (menu-state-input-action menu))
+                                        strings input max)))
+           (ecase action
+             ;; Move the cursor to the first found option
+             (:search (if (zerop (length found-indexes))
+                          (setf (menu-state-selected menu) nil)
+                          (let ((found-index (elt found-indexes 0)))
+                            (when found-index
+                              (setf (menu-state-selected menu) found-index)))))
+             ;; Remove extra options
+             (:filter (let ((filtered-indexes (funcall (second (menu-state-input-action menu))
+                                                       strings input max)))
+                        (setf (fill-pointer filtered-indexes) (min (length filtered-indexes) max))
+                        (let ((new-options (map 'vector (lambda (idx) (aref options idx))
+                                                filtered-indexes)))
 
-(defmethod menu-input ((menu menu-state) (input-does (eql :search)) key-seq)
-  "If the user entered a key not mapped in @var{*menu-map}, check if
-  he's trying  to type an entry's name. Match is case insensitive as
-  long as the user types lower-case characters.  If @var{key-seq} is
-  nil, some other function has  manipulated the current-input and is
-  requesting a re-computation of the match."
-  (do* ((cur-pos 0 (1+ cur-pos))
-        (rest-elem (menu-state-current-options menu)
-                   (cdr rest-elem))
-        (cur-elem (car rest-elem) (car rest-elem))
-        (cur-elem-name (menu-option-name cur-elem) (when cur-elem (menu-option-name cur-elem)))
-        (current-input-length (length (menu-state-current-input menu)))
-        (match-regex (ppcre:create-scanner (menu-state-current-input menu)
+                          (setf (menu-state-current-options menu) new-options)
+                          (setf (menu-state-selected menu)
+                                (if (> (length new-options) 0)
+                                    0
+                                    nil)))))))))
+      (bound-check-menu menu))))
+
+(defun menu-filter-regexp (strings input max)
+  "STRINGS is an array (deal with it) of strings to be filtered through this function.
+INPUT is the user input to use as a filter
+MAX is how many elements you should find. Finding more is a waste of time."
+  (let ((input-length (length input))
+        (match-regex (ppcre:create-scanner input
                                            :case-insensitive-mode
-                                           (string= (string-downcase (menu-state-current-input menu))
-                                                    (menu-state-current-input menu)))))
-       ((not cur-elem))
-    (when (and (>= (length cur-elem-name) current-input-length)
-               (ppcre:scan match-regex cur-elem-name))
-      (setf (menu-state-selected menu) cur-pos)
-      (bound-check-menu menu)
-      (return))))
+                                           (string= (string-downcase input)
+                                                    input)))
+        (result (make-array max :fill-pointer 0))
+        (found 0))
+    (loop for i from 0
+       for string across strings
+       until (>= (length result) max)
+       do (when (and (>= (length string) input-length)
+                     (ppcre:scan match-regex string))
+            (incf found)
+            (vector-push i result)))
+    result))
 
 (defun select-from-menu (screen table
                          &optional prompt
@@ -222,11 +267,17 @@ See *menu-map* for menu bindings."
   (check-type table list)
   (check-type prompt (or null string))
   (check-type initial-selection integer)
-  (check-type input-does (member :nothing :search))
+  (check-type input-does (or (member :nothing :search :filter)
+                             (cons (member :search :filter :generate)
+                                   function)))
   (check-type allow-literal boolean)
-  (when (eq input-does :nothing)
-    (setf allow-literal nil))
-  (let* ((menu-options (mapcar #'make-menu-option table))
+  (let* ((input-action (if (listp input-does)
+                           input-does
+                           (ecase input-does
+                             (:nothing (list :nothing))
+                             (:search (list :search #'menu-filter-regexp))
+                             (:filter (list :filter #'menu-filter-regexp)))))
+         (menu-options (map 'vector #'make-menu-option table))
          (menu-require-scrolling (and *menu-maximum-height*
                                        (> (length menu-options)
                                           *menu-maximum-height*)))
@@ -234,49 +285,55 @@ See *menu-map* for menu bindings."
                 :prompt prompt
                 :options menu-options
                 :current-options menu-options
-                :input-does input-does
+                :input-action input-action
                 :allow-literal allow-literal
                 :view-start (if menu-require-scrolling initial-selection 0)
                 :view-end (if menu-require-scrolling
                               (+ initial-selection *menu-maximum-height*)
                               (length menu-options))
-                :selected initial-selection
-                ;; Enough for tab-completion. User input will extend it with vector-push-extend as needed
-                :current-input (make-array (reduce #'max (mapcar (lambda (o)
-                                                                   (length (menu-option-name o)))
-                                                                 menu-options))
-                                           :element-type 'character
-                                           :adjustable t
-                                           :fill-pointer 0)))
+                :selected initial-selection))
          (*record-last-msg-override* t)
          (*suppress-echo-timeout* t))
+    (when (eq (first input-action) :generate)
+      (menu-input menu nil))
     (bound-check-menu menu)
+    ;; Menu input-render loop
     (catch :menu-quit
       (unwind-protect
            (with-focus (screen-key-window screen)
              (loop
-                (let ((strings (subseq (mapcar #'menu-option-name (menu-state-current-options menu))
-                                       (menu-state-view-start menu)
-                                       (menu-state-view-end menu)))
-                      (highlight (- (menu-state-selected menu)
-                                    (menu-state-view-start menu))))
-                  (unless (= 0 (menu-state-view-start menu))
-                    (push "..." strings)
-                    (incf highlight))
-                  (unless (= (length (menu-state-current-options menu)) (menu-state-view-end menu))
-                    (setf strings (nconc strings '("..."))))
+                (let* ((all-strings (map 'vector #'menu-option-name (menu-state-current-options menu)))
+                       (strings (coerce (subseq all-strings
+                                               (menu-state-view-start menu)
+                                               (min (menu-state-view-end menu)
+                                                    (length all-strings)))
+                                        'list)) ; There won't be more than could fit on your screen
+                       (highlight (when (menu-state-selected menu)
+                                    (- (menu-state-selected menu)
+                                       (menu-state-view-start menu)))))
+                  (when menu-require-scrolling
+                    (unless (= 0 (menu-state-view-start menu))
+                      (push "..." strings)
+                      (when highlight
+                        (incf highlight)))
+                    (unless (= (length (menu-state-current-options menu)) (menu-state-view-end menu))
+                      (setf strings (nconc strings '("...")))))
                   (unless (= (fill-pointer (menu-state-current-input menu)) 0)
                     (push (format nil "~a~a"
                                   input-prompt
                                   (menu-state-current-input menu))
                           strings)
-                    (incf highlight))
+                    (when highlight
+                      (incf highlight)))
                   (when prompt
                     (push prompt strings)
-                    (incf highlight))
-                  (echo-string-list screen strings highlight))
+                    (when highlight
+                      (incf highlight)))
+                  (if highlight
+                      (echo-string-list screen strings highlight)
+                      (echo-string-list screen strings)))
                 (multiple-value-bind (action key-seq) (read-from-keymap (list *menu-map*))
                   (if action
                       (funcall action menu)
-                      (menu-input menu input-does (first key-seq))))))
+                      (menu-input menu (first key-seq))))))
         (unmap-all-message-windows)))))
