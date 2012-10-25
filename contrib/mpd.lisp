@@ -428,11 +428,10 @@ Volume
 
 (defvar *mpd-volume-step* 5)
 
-(defun mpd-menu (title options keymap &optional initial-selection)
+(defun mpd-menu (title options keymap &optional (initial-selection 0))
   (let ((*menu-map* keymap))
     (multiple-value-bind (choice selection)
-        (select-from-menu (current-screen) options title (or initial-selection
-                                                             0))
+        (select-from-menu (current-screen) options title :initial-selection initial-selection))
       (cond
         ((null choice)
          (throw 'stumpwm::error "Abort."))
