@@ -191,46 +191,45 @@ backspace or F9), return it otherwise return nil"
     ;; First append the new character
     (let ((input-char (and key-seq (get-input-char key-seq))))
       (when input-char
-        (vector-push-extend input-char (menu-state-current-input menu)))
-      (ecase action
-        ;; The mode is to use input to generate options
-        (:generate
-         (setf (menu-state-current-options menu)
-               (funcall (second (menu-state-input-action menu))
-                        (menu-state-current-input menu))))
-        ;; The mode is to use pre-existing options
-        ((:search :filter)
-         ;; Some common code
-         (let* ((options (menu-state-options menu))
-                (strings (map 'vector #'menu-option-name options))
-                (input (menu-state-current-input menu))
-                (max (ecase action
-                       (:search 1)
-                       (:filter (if *menu-maximum-height*
-                                    (+ *menu-maximum-height* 1)
-                                    (length options)))))
-                (found-indexes (funcall (second (menu-state-input-action menu))
-                                        strings input max)))
-           (ecase action
-             ;; Move the cursor to the first found option
-             (:search (if (zerop (length found-indexes))
-                          (setf (menu-state-selected menu) nil)
-                          (let ((found-index (elt found-indexes 0)))
-                            (when found-index
-                              (setf (menu-state-selected menu) found-index)))))
-             ;; Remove extra options
-             (:filter (let ((filtered-indexes (funcall (second (menu-state-input-action menu))
-                                                       strings input max)))
-                        (setf (fill-pointer filtered-indexes) (min (length filtered-indexes) max))
-                        (let ((new-options (map 'vector (lambda (idx) (aref options idx))
-                                                filtered-indexes)))
-
-                          (setf (menu-state-current-options menu) new-options)
-                          (setf (menu-state-selected menu)
-                                (if (> (length new-options) 0)
-                                    0
-                                    nil)))))))))
-      (bound-check-menu menu))))
+        (vector-push-extend input-char (menu-state-current-input menu))))
+    (ecase action
+      ;; The mode is to use input to generate options
+      (:generate
+       (setf (menu-state-current-options menu)
+             (funcall (second (menu-state-input-action menu))
+                      (menu-state-current-input menu))))
+      ;; The mode is to use pre-existing options
+      ((:search :filter)
+       ;; Some common code
+       (let* ((options (menu-state-options menu))
+              (strings (map 'vector #'menu-option-name options))
+              (input (menu-state-current-input menu))
+              (max (ecase action
+                     (:search 1)
+                     (:filter (if *menu-maximum-height*
+                                  (+ *menu-maximum-height* 1)
+                                  (length options)))))
+              (found-indexes (funcall (second (menu-state-input-action menu))
+                                      strings input max)))
+         (ecase action
+           ;; Move the cursor to the first found option
+           (:search (if (zerop (length found-indexes))
+                        (setf (menu-state-selected menu) nil)
+                        (let ((found-index (elt found-indexes 0)))
+                          (when found-index
+                            (setf (menu-state-selected menu) found-index)))))
+           ;; Remove extra options
+           (:filter (let ((filtered-indexes (funcall (second (menu-state-input-action menu))
+                                                     strings input max)))
+                      (setf (fill-pointer filtered-indexes) (min (length filtered-indexes) max))
+                      (let ((new-options (map 'vector (lambda (idx) (aref options idx))
+                                              filtered-indexes)))
+                        (setf (menu-state-current-options menu) new-options)
+                        (setf (menu-state-selected menu)
+                              (if (> (length new-options) 0)
+                                  0
+                                  nil)))))))))
+    (bound-check-menu menu)))
 
 (defun menu-filter-regexp (strings input max)
   "STRINGS is an array (deal with it) of strings to be filtered through this function.
