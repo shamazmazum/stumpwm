@@ -1,150 +1,159 @@
 
 (defpackage :stumpwm.contrib.new-mode-line
-  (:use :cl :stumpwm))
+  (:use :cl :stumpwm)
+  (:export #:set-screen-mode-line
+           #:widget
+           #:render
+           #:defwidget
+           ;; Standard widgets
+           #:spacer
+           #:head
+           #:group
+           #:datetime
+           #:group-list
+           #:window-list
+           #:head-window-list
+           #:head-window-list-hidden-windows
+           #:urgent-window-list))
 
 (in-package stumpwm.contrib.new-mode-line)
 
-(pushnew '(#\L fmt-new-mode-line) *screen-mode-line-formatters* :test 'equal)
+(pushnew '(#\L fmt-mode-line) *screen-mode-line-formatters* :test 'equal)
 
-(defun millisecond (&optional (i 1)) (/ i 1000))
-(defun minute (&optional (i 1)) (* i 60))
-(defun hour (&optional (i 1)) (minute (* i 60)))
-(defun day (&optional (i 1)) (hour (* i 24)))
+(defvar *mode-lines-format* nil)
 
-(defvar *widgets* nil "The list of widgets")
-(defvar *format* "" "Format string")
+(defun set-screen-mode-line (&rest lines)
+  "Specifies the format for screen-mode-line. Accepts a list of lines where each line is
+  a list of widgets where each widget is either a constant string or a symbol (which should
+  name a widget subclass or a list (which should be a widget subclass with its initargs"
+  (handler-bind ((error #'stumpwm::restarts-menu))
+    (with-simple-restart (continue "Revert the previous mode-line format")
+      (setf *mode-lines-format*
+            (loop for line in lines
+               collect (loop for widget in line
+                          collect (typecase widget
+                                    (list (apply #'make-instance
+                                                 (intern (string (first widget))
+                                                         :stumpwm.contrib.new-mode-line)
+                                                 (rest widget)))
+                                    (symbol (make-instance (intern (string widget)
+                                                                   :stumpwm.contrib.new-mode-line)))
+                                    (string (make-instance 'constant-string :value widget))))))
+      (setf *screen-mode-line-format* "%L"))))
 
-(defstruct (widget (:constructor make-widget%))
-  "INTERVAL is in seconds. Can be :once which means update once or :always which means update on
-each mode-line update."
-  (interval :always :type (or (member :once :always) real))
-  (value "" :type string)
-  (func (lambda () "") :type function)
-  timer)
+(defclass widget ()
+  ((last-update-time :initform (get-internal-real-time))
+   (update-interval :type (or number (member :once :always))
+             :initform :always
+             :initarg :update-interval
+             :documentation "How often this widget needs to be updated in seconds. May actually be less often than this but not more.")
+   (content :initform nil))
+  (:documentation "A class implementing some generic widget behaviour. All mode-line
+  widgets should subclass it."))
 
-(defun make-widget (interval func)
-  "Creates a widget and immediately starts its update-timer"
-  (let ((widget (make-widget% :interval interval
-                              :func func)))
-    (case interval
-      (:once (update-widget widget))
-      (:always nil)
-      (t (setf (widget-timer widget)
-                       (run-with-timer 0 interval #'update-widget widget))))
-    widget))
+(defgeneric render (widget)
+  (:documentation "Called when the widget has to render itself. Return the new string
+  representation")
+  (:method :around ((widget widget))
+    (with-slots (last-update-time content) widget
+      (setf content (call-next-method))
+      (setf last-update-time (get-internal-real-time))
+      content)))
 
-(defun update-widget (widget)
-  "Redraws the widget"
-  (setf (widget-value widget)
-        (string-trim (list #\Space #\Tab #\Newline) (funcall (widget-func widget)))))
+(defgeneric maybe-render (widget)
+  (:documentation "Decides if it's time to render a widget")
+  (:method ((widget widget))
+    (with-slots (update-interval last-update-time content) widget
+      (case update-interval
+        (:once (unless content (render widget)))
+        (:always (render widget))
+        (t (when (<= (+ last-update-time
+                        (* update-interval internal-time-units-per-second))
+                     (get-internal-real-time))
+             (render widget))))
+      content)))
 
-(defun update-always-widgets ()
-  "Updates all widgets with :always interval"
-  (mapc #'update-widget (remove :always *widgets* :test-not #'eq :key #'widget-interval)))
+(defvar *stump-ml* nil "The current mode-line")
+(defun fmt-mode-line (ml)
+  (let ((*stump-ml* ml))
+    (format nil "~{~{~A~}~^~%~}"
+           (loop for line in *mode-lines-format*
+              collect (loop for widget in line
+                         collect (maybe-render widget))))))
 
-(defun make-new-mode-line (mode-line funcs)
-  "Tears down the old mode-line and sets up the new one"
-  (dolist (widget *widgets*)
-    (when (timer-p (widget-timer widget))
-      (cancel-timer (widget-timer widget))))
-  (setf *widgets* nil)
-  (multiple-value-bind (timeouts format)
-      (parse-mode-line mode-line)
-    (setf *format* format)
-    (loop for timeout in timeouts
-       for func in funcs
-       do (push (make-widget timeout func) *widgets*)))
-  (setf *widgets* (nreverse *widgets*)))
+(defmacro defwidget (name (&key slots default-update-interval) &body render-body)
+  "A simple helper macro for simple widgets"
+  (let ((widget-var (gensym "WIDGET")))
+    `(progn (defclass ,name (widget) ,slots
+              ,@(when default-update-interval
+                      (list `(:default-initargs :update-interval ,default-update-interval))))
+            (defmethod render ((,widget-var ,name))
+              (with-slots ,(mapcar #'first slots) ,widget-var
+                ,@render-body)))))
 
-(defun parse-mode-line (mode-line)
-  "Parses the mode-line format string. Returns (values TIMEOUTS FORMAT)"
-  (let ((timeouts nil)
-        (format (make-string (length mode-line)))
-        (pos 0))
-    (flet ((write-format-char (c)
-             (setf (aref format pos) c)
-             (incf pos))
-           (finish-format ()
-             (setf format (subseq format 0 pos)))
-           (read-timeout (s)
-             ;; First check if it's a simple not-really-interval
-             (ecase (peek-char nil s)
-               (#\o (read-char s)
-                    :once)
-               (#\a (read-char s)
-                    :always)
-               ((#\0 #\1 #\2 #\3 #\4 #\5 #\6 #\7 #\8 #\9)
-                ;; It's not. Read the interval-string
-                (let ((timeout-str (with-output-to-string (timeout-stream)
-                                     (loop named timeout-reader
-                                        for c = (read-char s)
-                                        do (ecase c
-                                             ((#\i #\s #\m #\h #\d)
-                                              (write-char c timeout-stream)
-                                              (return-from timeout-reader))
-                                             ((#\0 #\1 #\2 #\3 #\4 #\5 #\6 #\7 #\8 #\9 #\.)
-                                              (write-char c timeout-stream)))))))
-                  ;; Split
-                  (let ((number (read-from-string timeout-str nil nil
-                                                  :end (1- (length timeout-str))))
-                        (letter (aref timeout-str (1- (length timeout-str)))))
-                    ;; And make the result
-                    (ecase letter
-                      (#\i (millisecond number))
-                      (#\s number)
-                      (#\m (minute number))
-                      (#\h (hour number))
-                      (#\d (day number)))))))))
-      (with-input-from-string (mode-line mode-line)
-        (loop
-           (let ((c (read-char mode-line nil nil)))
-             (unless c (return))
-             (case c
-               (#\~ (write-format-char #\~)  ; The FORMAT string will be used in FORMAT
-                    (write-format-char #\~)) ; Need to escape ~
-               (#\% (case (peek-char nil mode-line)
-                      ;; Newlines
-                      (#\n
-                       (read-char mode-line)
-                       (write-format-char #\~)
-                       (write-format-char #\%))
-                      ;; Escape the %
-                      (#\%
-                       (read-char mode-line)
-                       (write-format-char #\%))
-                      ;; A widget
-                      (t
-                       (push (read-timeout mode-line) timeouts)
-                       (write-format-char #\~)
-                       (write-format-char #\A))))
-               ;; Literal character
-               (t (write-format-char c))))))
-      (finish-format)
-      (values (nreverse timeouts) format))))
+(pushnew :stumpwm.new-mode-line *features*)
 
-(defun fmt-new-mode-line (ml)
-  (declare (ignore ml))
-  "Hook to the existing mode-line system"
-  (update-always-widgets)
-  (apply #'format nil *format* (mapcar #'widget-value *widgets*)))
+;;;; Standard widgets
 
-;; For User API
-(defmacro stumpwm::set-mode-line (format &rest funcs)
-  "Works like the FORMAT function except (except it's a macro) it executes the respective
-forms each time a part of the string needs to be updated.
+(defwidget spacer (:default-update-interval :once)
+  "^>")
 
-Special character sequences:
-%% - literal %
-%n - newline
-%o - a widget that updates once on startup
-%a - a widget that updates every time the mode-line is redrawn
-%<number><scale> - a widget that updates at specified intervals.
-    Number can be any *real* number, scale is:
-        i - millisecond
-        s - second
-        m - minute
-        h - hour
-        d - day"
-  `(make-new-mode-line ,format
-                       (list ,@(loop for func in funcs
-                                  collect `(lambda () ,func)))))
+(defwidget constant-string (:default-update-interval :once
+                            :slots ((value :initarg :value)))
+  value)
+
+(defclass urgent-window-list (widget)
+  ((window-format :initform nil
+                  :initarg :window-format)))
+(defmethod render ((widget urgent-window-list))
+  (with-slots (window-format) widget
+    (let ((*window-format* (if window-format window-format *window-format*)))
+      (stumpwm::fmt-urgent-window-list *stump-ml*))))
+
+(defclass head-window-list (widget)
+  ((window-format :initform nil
+                  :initarg :window-format)))
+(defmethod render ((widget head-window-list))
+  (with-slots (window-format) widget
+    (let ((*window-format* (if window-format window-format *window-format*)))
+      (stumpwm::fmt-head-window-list *stump-ml*))))
+
+(defclass head-window-list-hidden-windows (widget)
+  ((window-format :initform nil
+                  :initarg :window-format)
+   (hidden-window-color :initform nil
+                        :initarg :hidden-window-color)))
+(defmethod render ((widget head-window-list-hidden-windows))
+  (with-slots (window-format hidden-window-color) widget
+    (let ((*window-format* (if window-format window-format *window-format*))
+          (*hidden-window-color* (if hidden-window-color hidden-window-color *hidden-window-color*)))
+      (stumpwm::fmt-head-window-list-hidden-windows *stump-ml*))))
+
+(defclass window-list (widget)
+  ((window-format :initform nil
+                  :initarg :window-format)))
+(defmethod render ((widget window-list))
+  (with-slots (window-format) widget
+    (let ((*window-format* (if window-format window-format *window-format*)))
+      (stumpwm::fmt-window-list *stump-ml*))))
+
+(defclass group-list (widget)
+  ((group-format :initform nil
+                  :initarg :window-format)))
+(defmethod render ((widget group-list))
+  (with-slots (group-format) widget
+    (let ((*group-format* (if group-format group-format *group-format*)))
+      (stumpwm::fmt-group-list *stump-ml*))))
+
+(defclass head (widget) ())
+(defmethod render ((widget head))
+  (stumpwm::fmt-head *stump-ml*))
+
+(defclass group (widget) ())
+(defmethod render ((widget group))
+  (stumpwm::fmt-group *stump-ml*))
+
+(defclass datetime (widget) ()
+  (:default-initargs :update-interval 1))
+(defmethod render ((widget datetime))
+  (stumpwm::fmt-modeline-time *stump-ml*))

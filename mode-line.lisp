@@ -19,20 +19,20 @@
 (in-package :stumpwm)
 
 (export '(*mode-line-background-color*
-	  *mode-line-border-color*
-	  *mode-line-border-width*
-	  *mode-line-foreground-color*
-	  *mode-line-pad-x*
-	  *mode-line-pad-y*
-	  *mode-line-position*
-	  *mode-line-timeout*
+      *mode-line-border-color*
+      *mode-line-border-width*
+      *mode-line-foreground-color*
+      *mode-line-pad-x*
+      *mode-line-pad-y*
+      *mode-line-position*
+      *mode-line-timeout*
           *hidden-window-color*
-	  *screen-mode-line-format*
-	  *screen-mode-line-formatters*
+      *screen-mode-line-format*
+      *screen-mode-line-formatters*
           add-screen-mode-line-formatter
-	  enable-mode-line
-	  toggle-mode-line
-	  bar-zone-color))
+      enable-mode-line
+      toggle-mode-line
+      bar-zone-color))
 
 (defstruct mode-line
   screen
@@ -293,7 +293,7 @@ critical."
 (defun resize-mode-line (ml)
   (when (eq (mode-line-mode ml) :stump)
     ;; This is a StumpWM mode-line
-    (setf (xlib:drawable-height (mode-line-window ml)) 
+    (setf (xlib:drawable-height (mode-line-window ml))
           (+ (* (1+ (count #\Newline (mode-line-contents ml) :test #'equal))
                 (font-height (screen-font (current-screen))))
              (* *mode-line-pad-y* 2))))
