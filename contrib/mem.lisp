@@ -90,4 +90,4 @@ total amount of memory, allocated memory, allocated/total ratio"
     (let* ((mem (mem-usage))
            (|%| (truncate (* 100 (nth 2 mem))))
            (allocated (truncate (/ (nth 1 mem) 1000))))
-      (format nil "~4D mb ^[~A~3D%^] " allocated (bar-zone-color |%|) |%|))))
+      (format nil "~4D MB ^[~A~3D%^] " allocated (bar-zone-color |%|) |%|))))
