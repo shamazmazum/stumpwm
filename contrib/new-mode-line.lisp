@@ -2,8 +2,6 @@
 (defpackage :stumpwm.contrib.new-mode-line
   (:use :cl :stumpwm)
   (:export #:set-screen-mode-line
-           #:widget
-           #:render
            #:defwidget))
 
 (in-package stumpwm.contrib.new-mode-line)
@@ -21,7 +19,7 @@
       (setf *mode-lines-format*
             (loop for line in lines
                collect (loop for widget in line
-                          collect (typecase widget
+                          collect (etypecase widget
                                     (list (apply #'make-instance
                                                  (intern (string (first widget))
                                                          :stumpwm.contrib.new-mode-line)
@@ -97,58 +95,39 @@
                             :slots ((value :initarg :value)))
   value)
 
-(defclass urgent-window-list (widget)
-  ((window-format :initform nil
-                  :initarg :window-format)))
-(defmethod render ((widget urgent-window-list))
-  (with-slots (window-format) widget
-    (let ((*window-format* (or window-format *window-format*)))
-      (stumpwm::fmt-urgent-window-list *stump-ml*))))
+(defwidget urgent-window-list (:slots ((window-format :initform nil
+                                                      :initarg :window-format)))
+  (let ((*window-format* (or window-format *window-format*)))
+    (stumpwm::fmt-urgent-window-list *stump-ml*)))
 
-(defclass head-window-list (widget)
-  ((window-format :initform nil
-                  :initarg :window-format)))
-(defmethod render ((widget head-window-list))
-  (with-slots (window-format) widget
-    (let ((*window-format* (or window-format *window-format*)))
-      (stumpwm::fmt-head-window-list *stump-ml*))))
+(defwidget head-window-list (:slots ((window-format :initform nil
+                                                    :initarg :window-format)))
+  (let ((*window-format* (or window-format *window-format*)))
+    (stumpwm::fmt-head-window-list *stump-ml*)))
 
-(defclass head-window-list-hidden-windows (widget)
-  ((window-format :initform nil
-                  :initarg :window-format)
-   (hidden-window-color :initform nil
-                        :initarg :hidden-window-color)))
-(defmethod render ((widget head-window-list-hidden-windows))
-  (with-slots (window-format hidden-window-color) widget
-    (let ((*window-format* (or window-format *window-format*))
-          (*hidden-window-color* (if hidden-window-color hidden-window-color *hidden-window-color*)))
-      (stumpwm::fmt-head-window-list-hidden-windows *stump-ml*))))
+(defwidget head-window-list-hidden-windows (:slots ((window-format :initform nil
+                                                                   :initarg :window-format)
+                                                    (hidden-window-color :initform nil
+                                                                         :initarg :hidden-window-color)))
+  (let ((*window-format* (or window-format *window-format*))
+        (*hidden-window-color* (if hidden-window-color hidden-window-color *hidden-window-color*)))
+    (stumpwm::fmt-head-window-list-hidden-windows *stump-ml*)))
 
-(defclass window-list (widget)
-  ((window-format :initform nil
-                  :initarg :window-format)))
-(defmethod render ((widget window-list))
-  (with-slots (window-format) widget
-    (let ((*window-format* (or window-format *window-format*)))
-      (stumpwm::fmt-window-list *stump-ml*))))
+(defwidget window-list (:slots ((window-format :initform nil
+                                               :initarg :window-format)))
+  (let ((*window-format* (or window-format *window-format*)))
+    (stumpwm::fmt-window-list *stump-ml*)))
 
-(defclass group-list (widget)
-  ((group-format :initform nil
-                  :initarg :window-format)))
-(defmethod render ((widget group-list))
-  (with-slots (group-format) widget
-    (let ((*group-format* (or group-format *group-format*)))
-      (stumpwm::fmt-group-list *stump-ml*))))
+(defwidget group-list (:slots ((group-format :initform nil
+                                             :initarg :window-format)))
+  (let ((*group-format* (or group-format *group-format*)))
+    (stumpwm::fmt-group-list *stump-ml*)))
 
-(defclass head (widget) ())
-(defmethod render ((widget head))
+(defwidget head ()
   (stumpwm::fmt-head *stump-ml*))
 
-(defclass group (widget) ())
-(defmethod render ((widget group))
+(defwidget group ()
   (stumpwm::fmt-group *stump-ml*))
 
-(defclass datetime (widget) ()
-  (:default-initargs :update-interval 1))
-(defmethod render ((widget datetime))
+(defwidget datetime (:default-update-interval 1)
   (stumpwm::fmt-modeline-time *stump-ml*))
