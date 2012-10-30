@@ -4,17 +4,7 @@
   (:export #:set-screen-mode-line
            #:widget
            #:render
-           #:defwidget
-           ;; Standard widgets
-           #:spacer
-           #:head
-           #:group
-           #:datetime
-           #:group-list
-           #:window-list
-           #:head-window-list
-           #:head-window-list-hidden-windows
-           #:urgent-window-list))
+           #:defwidget))
 
 (in-package stumpwm.contrib.new-mode-line)
 
