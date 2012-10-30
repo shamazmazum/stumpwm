@@ -49,8 +49,8 @@
 
 (defun read-battery-file (battery fname)
   (let ((fields (make-hash-table :test #'equal)))
-    (with-open-file (s (concatenate 'string "/proc/acpi/battery/" battery "/" fname) 
-		       :if-does-not-exist nil)
+    (with-open-file (s (concatenate 'string "/proc/acpi/battery/" battery "/" fname)
+                       :if-does-not-exist nil)
       (if s
           (do ((line (read-line s nil nil) (read-line s nil nil)))
               ((null line) fields)
@@ -96,8 +96,35 @@
               (bar-zone-color *bat-remain* 50 30 10 t)
               *bat-remain*
               (if *bat-remain-time*
-                  (format nil " (~2,'0d:~2,'0d) ~A"  (car *bat-remain-time*) (cadr *bat-remain-time*) *bat-state*) "")) "no battery"))
+                  (format nil " (~2,'0d:~2,'0d) ~A"  (car *bat-remain-time*) (cadr *bat-remain-time*) *bat-state*) ""))
+      "no battery"))
 
+#+stumpwm.new-mode-line
+(progn
+  (defvar *battery-formatters-alist*
+    '((#\t fmt-batt-remain-time)
+      (#\c fmt-batt-remain)
+      (#\s fmt-batt-state)))
+
+  (defun fmt-batt-remain-time ()
+    (if (and *bat-state* *bat-remain-time*)
+        (format nil " (~2,'0d:~2,'0d)"  (car *bat-remain-time*) (cadr *bat-remain-time*))
+        ""))
+
+  (defun fmt-batt-remain ()
+    (if *bat-state*
+        (format nil "BAT: ^[~A~D%^]" (bar-zone-color *bat-remain* 50 30 10 t) *bat-remain*)
+        ""))
+
+  (defun fmt-batt-state ()
+    (if *bat-state*
+        (format nil "~A" *bat-state*)
+        "NO BATTERY"))
+
+  (stumpwm.contrib.new-mode-line:defwidget battery (:default-update-interval 15
+                                                       :slots ((format "%c% %t %s")))
+    (current-battery-charge)
+    (format-expand *battery-formatters-alist* format)))
 
 ;; Alternative display:
 ;;
