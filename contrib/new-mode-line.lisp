@@ -51,6 +51,10 @@
   (:documentation "A class implementing some generic widget behaviour. All mode-line
   widgets should subclass it."))
 
+(defmethod initialize-instance :after ((widget widget) &key)
+  (let ((*stump-ml* (stumpwm::head-mode-line (current-head))))
+    (render widget)))
+
 (defgeneric render (widget)
   (:documentation "Called when the widget has to render itself. Return the new string
   representation")
@@ -83,11 +87,12 @@
 
 (defmacro defwidget (name (&key slots default-update-interval) &body render-body)
   "A simple helper macro for simple widgets"
-  (let ((widget-var (gensym "WIDGET")))
-    `(progn (defclass ,name (widget) ,slots
+  (let ((widget-var (gensym "WIDGET"))
+        (class (intern (string name) #.*package*)))
+    `(progn (defclass ,class (widget) ,slots
               ,@(when default-update-interval
                       (list `(:default-initargs :update-interval ,default-update-interval))))
-            (defmethod render ((,widget-var ,name))
+            (defmethod render ((,widget-var ,class))
               (with-slots ,(mapcar #'first slots) ,widget-var
                 ,@render-body)))))
 
@@ -107,7 +112,7 @@
                   :initarg :window-format)))
 (defmethod render ((widget urgent-window-list))
   (with-slots (window-format) widget
-    (let ((*window-format* (if window-format window-format *window-format*)))
+    (let ((*window-format* (or window-format *window-format*)))
       (stumpwm::fmt-urgent-window-list *stump-ml*))))
 
 (defclass head-window-list (widget)
@@ -115,7 +120,7 @@
                   :initarg :window-format)))
 (defmethod render ((widget head-window-list))
   (with-slots (window-format) widget
-    (let ((*window-format* (if window-format window-format *window-format*)))
+    (let ((*window-format* (or window-format *window-format*)))
       (stumpwm::fmt-head-window-list *stump-ml*))))
 
 (defclass head-window-list-hidden-windows (widget)
@@ -125,7 +130,7 @@
                         :initarg :hidden-window-color)))
 (defmethod render ((widget head-window-list-hidden-windows))
   (with-slots (window-format hidden-window-color) widget
-    (let ((*window-format* (if window-format window-format *window-format*))
+    (let ((*window-format* (or window-format *window-format*))
           (*hidden-window-color* (if hidden-window-color hidden-window-color *hidden-window-color*)))
       (stumpwm::fmt-head-window-list-hidden-windows *stump-ml*))))
 
@@ -134,7 +139,7 @@
                   :initarg :window-format)))
 (defmethod render ((widget window-list))
   (with-slots (window-format) widget
-    (let ((*window-format* (if window-format window-format *window-format*)))
+    (let ((*window-format* (or window-format *window-format*)))
       (stumpwm::fmt-window-list *stump-ml*))))
 
 (defclass group-list (widget)
@@ -142,7 +147,7 @@
                   :initarg :window-format)))
 (defmethod render ((widget group-list))
   (with-slots (group-format) widget
-    (let ((*group-format* (if group-format group-format *group-format*)))
+    (let ((*group-format* (or group-format *group-format*)))
       (stumpwm::fmt-group-list *stump-ml*))))
 
 (defclass head (widget) ())

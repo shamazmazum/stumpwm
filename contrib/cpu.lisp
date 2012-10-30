@@ -154,3 +154,12 @@ utilization."
                       :junk-allowed t))
             (:sysfs   (with-open-file (f (cdr *acpi-thermal-zone*))
                         (/ (read f) 1000))))))
+
+#+stumpwm.new-mode-line
+(progn
+  (stumpwm.contrib.new-mode-line:defwidget cpu-usage ()
+    (let ((cpu (truncate (* 100 (current-cpu-usage)))))
+      (format nil "^[~A~3D%^] " (bar-zone-color cpu) cpu)))
+
+  (stumpwm.contrib.new-mode-line:defwidget cpu-freq ()
+    (fmt-cpu-freq nil)))

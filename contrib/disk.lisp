@@ -110,3 +110,12 @@ Filesystem mount point
 @end table
 ")
 
+#+stumpwm.new-mode-line
+(progn
+  (stumpwm.contrib.new-mode-line:defwidget disk (:slots ((format :initarg :format
+                                                                 :initform nil)
+                                                         (paths :initarg :paths
+                                                                :initform nil)))
+    (let ((*disk-modeline-fmt* (or format *disk-modeline-fmt*))
+          (*disk-usage-paths* (or paths *disk-usage-paths*)))
+      (disk-modeline nil))))

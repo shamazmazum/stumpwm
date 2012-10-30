@@ -51,9 +51,9 @@
 (defun get-proc-fd-field (s field)
   (if s
       (do ((line (read-line s nil nil) (read-line s nil nil)))
-	  ((null line) nil)
-	(let ((split (cl-ppcre:split "\\s*:\\s*" line)))
-	  (when (string= (car split) field) (return (cadr split)))))
+          ((null line) nil)
+        (let ((split (cl-ppcre:split "\\s*:\\s*" line)))
+          (when (string= (car split) field) (return (cadr split)))))
       ""))
 
 (defun mem-usage ()
@@ -61,12 +61,12 @@
 total amount of memory, allocated memory, allocated/total ratio"
   (let ((allocated 0))
     (multiple-value-bind (mem-total mem-free buffers cached)
-	(with-open-file (file #P"/proc/meminfo" :if-does-not-exist nil)
-	  (values
-	   (read-from-string (get-proc-fd-field file "MemTotal"))
-	   (read-from-string (get-proc-fd-field file "MemFree"))
-	   (read-from-string (get-proc-fd-field file "Buffers"))
-	   (read-from-string (get-proc-fd-field file "Cached"))))
+        (with-open-file (file #P"/proc/meminfo" :if-does-not-exist nil)
+          (values
+           (read-from-string (get-proc-fd-field file "MemTotal"))
+           (read-from-string (get-proc-fd-field file "MemFree"))
+           (read-from-string (get-proc-fd-field file "Buffers"))
+           (read-from-string (get-proc-fd-field file "Cached"))))
       (setq allocated (- mem-total (+ mem-free buffers cached)))
       (list mem-total allocated (/ allocated mem-total)))))
 
@@ -74,8 +74,8 @@ total amount of memory, allocated memory, allocated/total ratio"
   "Returns a string representing the current percent of used memory."
   (declare (ignore ml))
   (let* ((mem (mem-usage))
-	 (|%| (truncate (* 100 (nth 2 mem))))
-	 (allocated (truncate (/ (nth 1 mem) 1000))))
+         (|%| (truncate (* 100 (nth 2 mem))))
+         (allocated (truncate (/ (nth 1 mem) 1000))))
     (format nil "MEM: ~4D mb ^[~A~3D%^] " allocated (bar-zone-color |%|) |%|)))
 
 (defun fmt-mem-usage-bar (ml &optional (width *mem-usage-bar-width*) (full *mem-usage-bar-full*) (empty *mem-usage-bar-empty*))
@@ -83,3 +83,11 @@ total amount of memory, allocated memory, allocated/total ratio"
   (declare (ignore ml))
   (let ((cpu (truncate (* 100 (nth 2 (mem-usage))))))
     (stumpwm::bar cpu width full empty)))
+
+#+stumpwm.new-mode-line
+(progn
+  (stumpwm.contrib.new-mode-line:defwidget mem-usage ()
+    (let* ((mem (mem-usage))
+           (|%| (truncate (* 100 (nth 2 mem))))
+           (allocated (truncate (/ (nth 1 mem) 1000))))
+      (format nil "~4D mb ^[~A~3D%^] " allocated (bar-zone-color |%|) |%|))))
