@@ -76,9 +76,9 @@
   (declare (ignore ml))
   (disk-update-usage *disk-usage-paths*)
   (let ((fmts (loop for p in *disk-usage-paths*
-                   collect (format-expand *disk-formatters-alist*
-                                          *disk-modeline-fmt*
-                                          p))))
+                 collect (format-expand *disk-formatters-alist*
+                                        *disk-modeline-fmt*
+                                        p))))
     (format nil "~{~a ~}" fmts)))
 
 (defvar *disk-formatters-alist*
