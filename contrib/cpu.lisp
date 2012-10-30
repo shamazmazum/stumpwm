@@ -33,9 +33,10 @@
 ;;;
 ;;; This is specific to Linux.
 
-(in-package :stumpwm)
+(defpackage :stumpwm.contrib.cpu
+  (:use :common-lisp :stumpwm :cl-ppcre))
 
-(export '(*acpi-thermal-zone*))
+(in-package :stumpwm.contrib.cpu)
 
 ;; Install formatters.
 (dolist (a '((#\c fmt-cpu-usage)
@@ -98,7 +99,7 @@ not available). Don't make calculation more than once a second."
   utilization."
   (declare (ignore ml))
   (let ((cpu (truncate (* 100 (current-cpu-usage)))))
-    (format nil "CPU: ^[~A~3D%^] " (bar-zone-color cpu) cpu)))
+    (format nil "^[~A~3D%^]" (bar-zone-color cpu) cpu)))
 
 (defun fmt-cpu-usage-bar (ml &optional (width *cpu-usage-bar-width*) (full *cpu-usage-bar-full*) (empty *cpu-usage-bar-empty*))
   "Returns a coloured bar-graph representing the current percent of average CPU
@@ -125,41 +126,13 @@ utilization."
         (format nil "~,2FGHz" (/ mhz 1000))
         (format nil "~DMHz" mhz))))
 
-(defvar *acpi-thermal-zone*
-  (let ((proc-dir (list-directory #P"/proc/acpi/thermal_zone/"))
-        (sys-dir (sort
-                  (remove-if-not
-                   (lambda (x)
-                     (when (cl-ppcre:scan "^.*/thermal_zone\\d+/" (namestring x))
-                       x))
-                   (list-directory #P"/sys/class/thermal/"))
-                  #'string< :key #'namestring)))
-    (cond
-      (proc-dir
-       (cons :procfs
-             (make-pathname :directory (pathname-directory (first proc-dir))
-                            :name "temperature")))
-      (sys-dir
-       (cons :sysfs
-             (make-pathname :directory (pathname-directory (first sys-dir))
-                            :name "temp"))))))
-
-(defun fmt-cpu-temp (ml)
-  "Returns a string representing the current CPU temperature."
-  (declare (ignore ml))
-  (format nil "~a°C"
-          (case (car *acpi-thermal-zone*)
-            (:procfs (parse-integer
-                      (get-proc-file-field (cdr *acpi-thermal-zone*) "temperature")
-                      :junk-allowed t))
-            (:sysfs   (with-open-file (f (cdr *acpi-thermal-zone*))
-                        (/ (read f) 1000))))))
-
 #+stumpwm.new-mode-line
 (progn
-  (stumpwm.contrib.new-mode-line:defwidget cpu-usage ()
-    (let ((cpu (truncate (* 100 (current-cpu-usage)))))
-      (format nil "^[~A~3D%^] " (bar-zone-color cpu) cpu)))
+  (defvar *cpu-formatters-alist*
+    '((#\u fmt-cpu-usage)
+      (#\U fmt-cpu-usage-bar)
+      (#\f fmt-cpu-freq)))
 
-  (stumpwm.contrib.new-mode-line:defwidget cpu-freq ()
-    (fmt-cpu-freq nil)))
+  (stumpwm.contrib.new-mode-line:defwidget cpu (:slots ((format "%u %f"))
+                                                :default-update-interval 1)
+    (format-expand *cpu-formatters-alist* format nil)))

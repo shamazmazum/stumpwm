@@ -123,9 +123,10 @@
           command-mode-start-message
           command-mode-end-message
           split-string
-	  with-restarts-menu
+          with-restarts-menu
           with-data-file
-	  move-to-head))
+          move-to-head
+          format-expand))
 
 
 ;;; Message Timer
@@ -542,7 +543,7 @@ loads the rc file.")
 
 (defvar *interactivep* nil
   "True when a defcommand is executed from colon or a keybinding")
- 
+
 ;;; The restarts menu macro
 
 (defmacro with-restarts-menu (&body body)

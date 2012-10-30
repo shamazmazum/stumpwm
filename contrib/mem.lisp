@@ -67,16 +67,23 @@ total amount of memory, allocated memory, allocated/total ratio"
            (read-from-string (get-proc-fd-field file "MemFree"))
            (read-from-string (get-proc-fd-field file "Buffers"))
            (read-from-string (get-proc-fd-field file "Cached"))))
-      (setq allocated (- mem-total (+ mem-free buffers cached)))
+      (setq allocated (- mem-total mem-free buffers cached))
       (list mem-total allocated (/ allocated mem-total)))))
+
+(defun fmt-mem-total (ml)
+  (declare (ignore ml))
+  (format nil "~DMB" (truncate (first (mem-usage)) 1000)))
+
+(defun fmt-mem-allocated (ml)
+  (declare (ignore ml))
+  (format nil "~DMB" (truncate (second (mem-usage)) 1000)))
 
 (defun fmt-mem-usage (ml)
   "Returns a string representing the current percent of used memory."
   (declare (ignore ml))
   (let* ((mem (mem-usage))
-         (|%| (truncate (* 100 (nth 2 mem))))
-         (allocated (truncate (/ (nth 1 mem) 1000))))
-    (format nil "MEM: ~4D mb ^[~A~3D%^] " allocated (bar-zone-color |%|) |%|)))
+         (|%| (truncate (* 100 (nth 2 mem)))))
+    (format nil "^[~A~3D%^]" (bar-zone-color |%|) |%|)))
 
 (defun fmt-mem-usage-bar (ml &optional (width *mem-usage-bar-width*) (full *mem-usage-bar-full*) (empty *mem-usage-bar-empty*))
   "Returns a coloured bar-graph representing the current allocation of memory."
@@ -86,8 +93,11 @@ total amount of memory, allocated memory, allocated/total ratio"
 
 #+stumpwm.new-mode-line
 (progn
-  (stumpwm.contrib.new-mode-line:defwidget mem-usage ()
-    (let* ((mem (mem-usage))
-           (|%| (truncate (* 100 (nth 2 mem))))
-           (allocated (truncate (/ (nth 1 mem) 1000))))
-      (format nil "~4D MB ^[~A~3D%^] " allocated (bar-zone-color |%|) |%|))))
+  (defvar *mem-formatters-alist*
+    '((#\a fmt-mem-allocated)
+      (#\t fmt-mem-total)
+      (#\u fmt-mem-usage)
+      (#\U fmt-mem-usage-bar)))
+
+  (stumpwm.contrib.new-mode-line:defwidget mem (:slots ((format "%a/%t")))
+    (format-expand *mem-formatters-alist* format nil)))

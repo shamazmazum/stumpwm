@@ -47,10 +47,11 @@
   (:documentation "Called when the widget has to render itself. Return the new string
   representation")
   (:method :around ((widget widget))
-    (with-slots (last-update-time content) widget
-      (setf content (call-next-method))
-      (setf last-update-time (get-internal-real-time))
-      content)))
+    (handler-bind ((error #'stumpwm::restarts-menu))
+      (with-slots (last-update-time content) widget
+        (setf content (call-next-method))
+        (setf last-update-time (get-internal-real-time))
+        content))))
 
 (defgeneric maybe-render (widget)
   (:documentation "Decides if it's time to render a widget")
@@ -77,11 +78,18 @@
   "A simple helper macro for simple widgets"
   (let ((widget-var (gensym "WIDGET"))
         (class (intern (string name) #.*package*)))
-    `(progn (defclass ,class (widget) ,slots
+    `(progn (defclass ,class (widget) ,(loop for slot in slots
+                                          collect (if (listp slot)
+                                                      `(,(first slot) :initarg ,(intern (string (first slot)) :keyword)
+                                                              :initform ,(second slot))
+                                                      `(,slot :initarg ,(intern (string slot) :keyword)
+                                                              :initform nil)))
               ,@(when default-update-interval
                       (list `(:default-initargs :update-interval ,default-update-interval))))
             (defmethod render ((,widget-var ,class))
-              (with-slots ,(mapcar #'first slots) ,widget-var
+              (with-slots ,(loop for slot in slots
+                                collect (if (listp slot) (first slot) slot))
+                  ,widget-var
                 ,@render-body)))))
 
 (pushnew :stumpwm.new-mode-line *features*)
@@ -92,34 +100,27 @@
   "^>")
 
 (defwidget constant-string (:default-update-interval :once
-                            :slots ((value :initarg :value)))
+                            :slots (value))
   value)
 
-(defwidget urgent-window-list (:slots ((window-format :initform nil
-                                                      :initarg :window-format)))
+(defwidget urgent-window-list (:slots (window-format))
   (let ((*window-format* (or window-format *window-format*)))
     (stumpwm::fmt-urgent-window-list *stump-ml*)))
 
-(defwidget head-window-list (:slots ((window-format :initform nil
-                                                    :initarg :window-format)))
+(defwidget head-window-list (:slots (window-format))
   (let ((*window-format* (or window-format *window-format*)))
     (stumpwm::fmt-head-window-list *stump-ml*)))
 
-(defwidget head-window-list-hidden-windows (:slots ((window-format :initform nil
-                                                                   :initarg :window-format)
-                                                    (hidden-window-color :initform nil
-                                                                         :initarg :hidden-window-color)))
+(defwidget head-window-list-hidden-windows (:slots (window-format hidden-window-color))
   (let ((*window-format* (or window-format *window-format*))
         (*hidden-window-color* (if hidden-window-color hidden-window-color *hidden-window-color*)))
     (stumpwm::fmt-head-window-list-hidden-windows *stump-ml*)))
 
-(defwidget window-list (:slots ((window-format :initform nil
-                                               :initarg :window-format)))
+(defwidget window-list (:slots (window-format))
   (let ((*window-format* (or window-format *window-format*)))
     (stumpwm::fmt-window-list *stump-ml*)))
 
-(defwidget group-list (:slots ((group-format :initform nil
-                                             :initarg :window-format)))
+(defwidget group-list (:slots (group-format))
   (let ((*group-format* (or group-format *group-format*)))
     (stumpwm::fmt-group-list *stump-ml*)))
 

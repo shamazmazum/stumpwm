@@ -32,7 +32,10 @@
 ;;; documentation for *disk-modeline-fmt* for more information.
 
 ;;; CODE:
-(in-package :stumpwm)
+(defpackage :stumpwm.contrib.disk
+  (:use :common-lisp :stumpwm :cl-ppcre))
+
+(in-package :stumpwm.contrib.disk)
 
 (dolist (a '((#\D disk-modeline)))
   (pushnew a *screen-mode-line-formatters* :test 'equal))
@@ -79,7 +82,7 @@
                  collect (format-expand *disk-formatters-alist*
                                         *disk-modeline-fmt*
                                         p))))
-    (format nil "~{~a ~}" fmts)))
+    (format nil "~{~a~^ ~}" fmts)))
 
 (defvar *disk-formatters-alist*
   '((#\d disk-get-device)
@@ -112,10 +115,7 @@ Filesystem mount point
 
 #+stumpwm.new-mode-line
 (progn
-  (stumpwm.contrib.new-mode-line:defwidget disk (:slots ((format :initarg :format
-                                                                 :initform nil)
-                                                         (paths :initarg :paths
-                                                                :initform nil)))
+  (stumpwm.contrib.new-mode-line:defwidget disk (:slots (format paths))
     (let ((*disk-modeline-fmt* (or format *disk-modeline-fmt*))
           (*disk-usage-paths* (or paths *disk-usage-paths*)))
       (disk-modeline nil))))
