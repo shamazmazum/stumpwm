@@ -74,21 +74,34 @@
               collect (loop for widget in line
                          collect (maybe-render widget))))))
 
+(defun make-slots (slot-forms)
+  "Takes a list of slots for defwidget. Returns a list of two values.
+  First value is the list of slots suitable for defclass.
+  Second value is the list of slot names."
+  (let ((slots (loop for slot in slot-forms
+                  collect (etypecase slot
+                            (list (ecase (length slot)
+                                    (1 `(,(first slot)
+                                          :initform nil
+                                          :initarg ,(intern (string (first slot)) :keyword)))
+                                    (2 `(,(first slot)
+                                          :initform ,(second slot)
+                                          :initarg ,(intern (string (first slot)) :keyword)))))
+                            (symbol `(,slot
+                                      :initform nil
+                                      :initarg ,(intern (string (first slot)) :keyword)))))))
+    (list slots (mapcar #'first slots))))
+
 (defmacro defwidget (name (&key slots default-update-interval) &body render-body)
   "A simple helper macro for simple widgets"
   (let ((widget-var (gensym "WIDGET"))
-        (class (intern (string name) #.*package*)))
-    `(progn (defclass ,class (widget) ,(loop for slot in slots
-                                          collect (if (listp slot)
-                                                      `(,(first slot) :initarg ,(intern (string (first slot)) :keyword)
-                                                              :initform ,(second slot))
-                                                      `(,slot :initarg ,(intern (string slot) :keyword)
-                                                              :initform nil)))
+        (class (intern (string name) #.*package*))
+        (slots (make-slots slots)))
+    `(progn (defclass ,class (widget) ,(first slots)
               ,@(when default-update-interval
                       (list `(:default-initargs :update-interval ,default-update-interval))))
             (defmethod render ((,widget-var ,class))
-              (with-slots ,(loop for slot in slots
-                                collect (if (listp slot) (first slot) slot))
+              (with-slots ,(second slots)
                   ,widget-var
                 ,@render-body)))))
 
