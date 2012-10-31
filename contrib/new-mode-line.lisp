@@ -89,7 +89,7 @@
                                           :initarg ,(intern (string (first slot)) :keyword)))))
                             (symbol `(,slot
                                       :initform nil
-                                      :initarg ,(intern (string (first slot)) :keyword)))))))
+                                      :initarg ,(intern (string slot) :keyword)))))))
     (list slots (mapcar #'first slots))))
 
 (defmacro defwidget (name (&key slots default-update-interval) &body render-body)
