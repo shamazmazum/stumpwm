@@ -48,44 +48,58 @@
 
 (in-package #:stumpwm)
 
+
+(load-module "stumptray")
+(load-module "mpd")
+
 #+sbcl (require :sb-introspect)
 
 ;; handy for figuring out which symbol is borking the documentation
 (defun dprint (sym)
   (declare (ignorable sym))
   ;;(format t "~&Doing ~a..." sym))
-)
+  )
 
 (defun generate-function-doc (s line)
-  (ppcre:register-groups-bind (name) ("^@@@ (.*)" line)
-                              (dprint name)
-                              (let ((fn (if (find #\( name :test 'char=)
-                                            ;; handle (setf <symbol>) functions
-                                            (with-standard-io-syntax
-                                              (let ((*package* (find-package :stumpwm)))
-                                                (fdefinition (read-from-string name))))
-                                            (symbol-function (find-symbol (string-upcase name) :stumpwm))))
-                                    (*print-pretty* nil))
-                                (format s "@defun {~a} ~{~a~^ ~}~%~a~&@end defun~%~%"
-                                        name
-                                        #+sbcl (sb-introspect:function-lambda-list fn)
-                                        #+clisp (ext:arglist fn)
-                                        #+lispworks (lw:function-lambda-list fn)
-                                        #- (or sbcl clisp lispworks) '("(Check the code for args list)")
-                                        (documentation fn 'function))
-                                t)))
+  (ppcre:register-groups-bind (package-colon package name) ("^@@@ ((.*):)?(.*)" line)
+    (declare (ignore package-colon))
+    (dprint package)
+    (dprint name)
+    (if package
+        (setf package (string-upcase package))
+        (setf package "STUMPWM"))
+    (let ((fn (if (find #\( name :test 'char=)
+                  ;; handle (setf <symbol>) functions
+                  (with-standard-io-syntax
+                    (let ((*package* (find-package package)))
+                      (fdefinition (read-from-string name))))
+                  (symbol-function (find-symbol (string-upcase name) package))))
+          (*print-pretty* nil))
+      (format s "@defun {~a} ~{~a~^ ~}~%~a~&@end defun~%~%"
+              name
+              #+sbcl (sb-introspect:function-lambda-list fn)
+              #+clisp (ext:arglist fn)
+              #+lispworks (lw:function-lambda-list fn)
+              #- (or sbcl clisp lispworks) '("(Check the code for args list)")
+              (documentation fn 'function))
+      t)))
 
 (defun generate-macro-doc (s line)
-  (ppcre:register-groups-bind (name) ("^%%% (.*)" line)
-                              (dprint name)
-                              (let* ((symbol (find-symbol (string-upcase name) :stumpwm))
-                                     (*print-pretty* nil))
-                                (format s "@defmac {~a} ~{~a~^ ~}~%~a~&@end defmac~%~%"
-                                        name
-                                        #+sbcl (sb-introspect:function-lambda-list (macro-function symbol))
-                                        #+clisp (ext:arglist symbol)
-                                        #+lispworks (lw:function-lambda-list symbol)
-                                        #- (or sbcl clisp lispworks) '("(Check the code for args list)")
+  (ppcre:register-groups-bind (package-colon package name) ("^%%% ((.*):)?(.*)" line)
+    (declare (ignore package-colon))
+    (dprint package)
+    (dprint name)
+    (if package
+        (setf package (string-upcase package))
+        (setf package "STUMPWM"))
+    (let* ((symbol (find-symbol (string-upcase name) package))
+           (*print-pretty* nil))
+      (format s "@defmac {~a} ~{~a~^ ~}~%~a~&@end defmac~%~%"
+              name
+              #+sbcl (sb-introspect:function-lambda-list (macro-function symbol))
+              #+clisp (ext:arglist symbol)
+              #+lispworks (lw:function-lambda-list symbol)
+              #- (or sbcl clisp lispworks) '("(Check the code for args list)")
                                         ;;; FIXME: when clisp compiles
                                         ;;; a macro it discards the
                                         ;;; documentation string! So
@@ -93,39 +107,54 @@
                                         ;;; manual for clisp, it is
                                         ;;; loaded and not compiled
                                         ;;; this will return NIL.
-                                        #+clisp (or (documentation symbol 'function)
-                                                    "Due to a bug in clisp, macro function documentation is not generated. Try building the manual using sbcl.")
-                                        #-clisp (documentation symbol 'function))
-                                t)))
+              #+clisp (or (documentation symbol 'function)
+                          "Due to a bug in clisp, macro function documentation is not generated. Try building the manual using sbcl.")
+              #-clisp (documentation symbol 'function))
+      t)))
 
 (defun generate-variable-doc (s line)
-  (ppcre:register-groups-bind (name) ("^### (.*)" line)
-                              (dprint name)
-                              (let ((sym (find-symbol (string-upcase name) :stumpwm)))
-                                (format s "@defvar ~a~%~a~&@end defvar~%~%"
-                                        name (documentation sym 'variable))
-                                t)))
+  (ppcre:register-groups-bind (package-colon package name) ("^### ((.*):)?(.*)" line)
+    (declare (ignore package-colon))
+    (dprint package)
+    (dprint name)
+    (if package
+        (setf package (string-upcase package))
+        (setf package "STUMPWM"))
+    (let ((sym (find-symbol (string-upcase name) package)))
+      (format s "@defvar ~a~%~a~&@end defvar~%~%"
+              name (documentation sym 'variable))
+      t)))
 
 (defun generate-hook-doc (s line)
-  (ppcre:register-groups-bind (name) ("^\\$\\$\\$ (.*)" line)
-                              (dprint name)
-                              (let ((sym (find-symbol (string-upcase name) :stumpwm)))
-                                (format s "@defvr {Hook} ~a~%~a~&@end defvr~%~%"
-                                        name (documentation sym 'variable))
-                                t)))
+  (ppcre:register-groups-bind (package-colon package name) ("^\\$\\$\\$ ((.*):)?(.*)" line)
+    (declare (ignore package-colon))
+    (dprint package)
+    (dprint name)
+    (if package
+        (setf package (string-upcase package))
+        (setf package "STUMPWM"))
+    (let ((sym (find-symbol (string-upcase name) package)))
+      (format s "@defvr {Hook} ~a~%~a~&@end defvr~%~%"
+              name (documentation sym 'variable))
+      t)))
 
 (defun generate-command-doc (s line)
-  (ppcre:register-groups-bind (name) ("^!!! (.*)" line)
-                              (dprint name)
-                              (let ((cmd (symbol-function (find-symbol (string-upcase name) :stumpwm))))
-                                (format s "@deffn {Command} ~a ~{~a~^ ~}~%~a~&@end deffn~%~%"
-                                        name
-                                        #+sbcl (sb-introspect:function-lambda-list cmd)
-                                        #+clisp (ext:arglist cmd)
-                                        #+lispworks (lw:function-lambda-list cmd)
-                                        #- (or sbcl clisp lispworks) '("(Check the code for args list)")
-                                        (documentation cmd 'function))
-                                t)))
+  (ppcre:register-groups-bind (package-colon package name) ("^!!! ((.*):)?(.*)" line)
+    (declare (ignore package-colon))
+    (dprint package)
+    (dprint name)
+    (if package
+        (setf package (string-upcase package))
+        (setf package "STUMPWM"))
+    (let ((cmd (symbol-function (find-symbol (string-upcase name) package))))
+      (format s "@deffn {Command} ~a ~{~a~^ ~}~%~a~&@end deffn~%~%"
+              name
+              #+sbcl (sb-introspect:function-lambda-list cmd)
+              #+clisp (ext:arglist cmd)
+              #+lispworks (lw:function-lambda-list cmd)
+              #- (or sbcl clisp lispworks) '("(Check the code for args list)")
+              (documentation cmd 'function))
+      t)))
 
 (defun generate-manual (&key (in #p"stumpwm.texi.in") (out #p"stumpwm.texi"))
   (let ((*print-case* :downcase))

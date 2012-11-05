@@ -8,8 +8,8 @@
 ;; cmucl-clx. *very* annoying. I don't actually know if debian still
 ;; does this.
 #+cmu (progn
-	  (ignore-errors (require :cmucl-clx))
-	  (ignore-errors (require :clx)))
+        (ignore-errors (require :cmucl-clx))
+        (ignore-errors (require :clx)))
 
 (defsystem :stumpwm
   :name "StumpWM"
@@ -19,7 +19,10 @@
   ;; :license "GNU General Public License"
   :description "A tiling, keyboard driven window manager" 
   :serial t
-  :depends-on (:cl-ppcre #-(or cmu clisp) :clx :clx-truetype #+sbcl :sb-posix)
+
+  :depends-on (:cl-ppcre #-(or cmu clisp) :clx #+sbcl :sb-posix
+                         :xembed
+                         :clx-truetype)
   :components ((:file "xlib-utils")
                (:file "package")
 	       (:file "primitives")
