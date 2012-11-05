@@ -163,6 +163,7 @@ Modules
 
 * MPD::
 * STUMPTRAY::
+* STUMPERWINDOWLAYOUT::
 
 Hacking
 
@@ -1392,6 +1393,7 @@ modules exist in the @file{contrib/} directory of StumpWM's archive.
 @menu
 * MPD::
 * STUMPTRAY::
+* STUMPERWINDOWLAYOUT::
 @end menu
 
 @node MPD, STUMPTRAY, Modules, Modules
@@ -1412,7 +1414,7 @@ command mpd-current-song (*mpd-current-song-fmt*). See the documentation for
 
 ### *mpd-modeline-fmt*
 
-@node STUMPTRAY,  , MPD, Modules
+@node STUMPTRAY, STUMPERWINDOWLAYOUT, MPD, Modules
 @section Modules: STUMPTRAY
 
 @example
@@ -1429,6 +1431,15 @@ right corner of mode-line by code
 @end example
 
 !!! stumptray:stumptray
+
+@node STUMPERWINDOWLAYOUT,  , STUMPTRAY, Modules
+@section Modules: STUMPERWINDOWLAYOUT
+
+@example
+(load-module "stumperwindowlayout")
+@end example
+
+!!! enable-per-window-layout
 
 @node Hacking, Command and Function Index, Modules, Top
 @chapter Hacking

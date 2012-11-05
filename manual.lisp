@@ -51,6 +51,7 @@
 
 (load-module "stumptray")
 (load-module "mpd")
+(load-module "stumperwindowlayout")
 
 #+sbcl (require :sb-introspect)
 
