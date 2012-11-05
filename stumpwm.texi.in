@@ -83,87 +83,92 @@ This document explains how to use The Stump Window Manager.
 @end ifinfo
 
 @menu
-* Introduction::                
-* Key Bindings::                
-* Commands::                    
-* Message and Input Bar::       
-* Windows::                     
-* Frames::                      
-* Mode-line::                   
-* Groups::                      
-* Screens::                     
-* Interacting With Unix::       
-* Interacting With X11::        
-* Miscellaneous Commands::      
-* Colors::                      
-* Hooks::                       
-* Modules::                     
-* Hacking::                     
-* Command and Function Index::  
-* Variable Index::              
+* Introduction::
+* Key Bindings::
+* Commands::
+* Message and Input Bar::
+* Windows::
+* Frames::
+* Mode-line::
+* Groups::
+* Screens::
+* Interacting With Unix::
+* Interacting With X11::
+* Miscellaneous Commands::
+* Colors::
+* Hooks::
+* Modules::
+* Hacking::
+* Command and Function Index::
+* Variable Index::
 
 @detailmenu
  --- The Detailed Node Listing ---
 
 Introduction
 
-* Starting StumpWM::            
-* Basic Usage::                 
-* Interacting with the Lisp process::  
-* Contact the StumpWM developers::  
+* Starting StumpWM::
+* Basic Usage::
+* Interacting with the Lisp process::
+* Contact the StumpWM developers::
 
 Key Bindings
 
-* List of Default Keybindings::  
-* Binding Keys::                
-* Modifiers::                   
+* List of Default Keybindings::
+* Binding Keys::
+* Modifiers::
 
 Message and Input Bar
 
-* Customizing The Bar::         
-* Using The Input Bar::         
-* Programming The Message Bar::  
-* Programming the Input Bar::   
+* Customizing The Bar::
+* Using The Input Bar::
+* Programming The Message Bar::
+* Programming the Input Bar::
 
 Windows
 
-* Window Marks::                
-* Customizing Window Appearance::  
-* Controlling Raise And Map Requests::  
-* Programming With Windows::    
-* Rule Based Window Placement::  
+* Window Marks::
+* Customizing Window Appearance::
+* Controlling Raise And Map Requests::
+* Programming With Windows::
+* Rule Based Window Placement::
 
 Frames
 
-* Interactively Resizing Frames::  
-* Frame Dumping::               
+* Interactively Resizing Frames::
+* Frame Dumping::
 
 Groups
 
-* Customizing Groups::          
+* Customizing Groups::
 
 Screens
 
-* Xinerama::                    
-* Programming With Screens::    
+* Xinerama::
+* Programming With Screens::
 
 Miscellaneous Commands
 
-* Menus::                       
-* StumpWM's Data Directory::    
-* Debugging StumpWM::           
-* Timers::                      
-* Getting Help::                
+* Menus::
+* StumpWM's Data Directory::
+* Debugging StumpWM::
+* Timers::
+* Getting Help::
 
 Colors
 
-* Behind The Scenes Look At Colors::  
+* Behind The Scenes Look At Colors::
+
+Modules
+
+* MPD::
+* STUMPTRAY::
 
 Hacking
 
-* General Advice::              
-* Using git with StumpWM::      
-* Sending Patches::             
+* General Advice::
+* Using git with StumpWM::
+* Sending Patches::
 
 @end detailmenu
 @end menu
@@ -175,10 +180,10 @@ user interface goals are similar to ratpoison's but with an emphasis on
 customizability, completeness, and cushiness.
 
 @menu
-* Starting StumpWM::            
-* Basic Usage::                 
-* Interacting with the Lisp process::  
-* Contact the StumpWM developers::  
+* Starting StumpWM::
+* Basic Usage::
+* Interacting with the Lisp process::
+* Contact the StumpWM developers::
 @end menu
 
 @node Starting StumpWM, Basic Usage, Introduction, Introduction
@@ -292,9 +297,9 @@ mimics GNU Screen's keyboard handling. StumpWM's default prefix key is
 @kbd{C-t}.
 
 @menu
-* List of Default Keybindings::  
-* Binding Keys::                
-* Modifiers::                   
+* List of Default Keybindings::
+* Binding Keys::
+* Modifiers::
 @end menu
 
 @node List of Default Keybindings, Binding Keys, Key Bindings, Key Bindings
@@ -666,10 +671,10 @@ FIXME: actually write some docs here
 !!! colon
 
 @menu
-* Customizing The Bar::         
-* Using The Input Bar::         
-* Programming The Message Bar::  
-* Programming the Input Bar::   
+* Customizing The Bar::
+* Using The Input Bar::
+* Programming The Message Bar::
+* Programming the Input Bar::
 @end menu
 
 @node Customizing The Bar, Using The Input Bar, Message and Input Bar, Message and Input Bar
@@ -816,11 +821,11 @@ An input function takes 2 arguments: the input structure and the key pressed.
 ### *new-window-prefered-frame*
 
 @menu
-* Window Marks::                
-* Customizing Window Appearance::  
-* Controlling Raise And Map Requests::  
-* Programming With Windows::    
-* Rule Based Window Placement::  
+* Window Marks::
+* Customizing Window Appearance::
+* Controlling Raise And Map Requests::
+* Programming With Windows::
+* Rule Based Window Placement::
 @end menu
 
 @node Window Marks, Customizing Window Appearance, Windows, Windows
@@ -934,8 +939,8 @@ window pool, where windows and frames are not so tightly connected.
 ### *new-frame-action*
 
 @menu
-* Interactively Resizing Frames::  
-* Frame Dumping::               
+* Interactively Resizing Frames::
+* Frame Dumping::
 @end menu
 
 @node Interactively Resizing Frames, Frame Dumping, Frames, Frames
@@ -1072,7 +1077,7 @@ Groups in StumpWM are more commonly known as @dfn{virtual desktops} or
 !!! grouplist
 
 @menu
-* Customizing Groups::          
+* Customizing Groups::
 @end menu
 
 @node Customizing Groups,  , Groups, Groups
@@ -1092,8 +1097,8 @@ StumpWM handles multiple screens.
 !!! sother
 
 @menu
-* Xinerama::                    
-* Programming With Screens::    
+* Xinerama::
+* Programming With Screens::
 @end menu
 
 @node Xinerama, Programming With Screens, Screens, Screens
@@ -1187,11 +1192,11 @@ section.
 ### *initializing*
 
 @menu
-* Menus::                       
-* StumpWM's Data Directory::    
-* Debugging StumpWM::           
-* Timers::                      
-* Getting Help::                
+* Menus::
+* StumpWM's Data Directory::
+* Debugging StumpWM::
+* Timers::
+* Getting Help::
 @end menu
 
 @node Menus, StumpWM's Data Directory, Miscellaneous Commands, Miscellaneous Commands
@@ -1315,7 +1320,7 @@ two digits are left up to the user. @ref{Behind The Scenes Look At
 Colors} for information on customizing colors.
 
 @menu
-* Behind The Scenes Look At Colors::  
+* Behind The Scenes Look At Colors::
 @end menu
 
 @node Behind The Scenes Look At Colors,  , Colors, Colors
@@ -1374,6 +1379,8 @@ $$$ *root-click-hook*
 $$$ *mode-line-click-hook*
 $$$ *urgent-window-hook*
 $$$ *event-processing-hook*
+$$$ *new-mode-line-hook*
+$$$ *destroy-mode-line-hook*
 
 @node Modules, Hacking, Hooks, Top
 @chapter Modules
@@ -1382,6 +1389,47 @@ modules exist in the @file{contrib/} directory of StumpWM's archive.
 
 !!! load-module
 
+@menu
+* MPD::
+* STUMPTRAY::
+@end menu
+
+@node MPD, STUMPTRAY, Modules, Modules
+@section Modules: MPD
+
+@example
+(load-module "mpd")
+@end example
+
+Then you can use "%m" in your mode line format, as well as various commands
+defined at the end of the file.
+
+You can customize the modeline format (*mpd-modeline-fmt*), the status
+message displayed by the command mpd-status (*mpd-status-fmt*; note that
+this is also used on the modeline), and the status message displayed by the
+command mpd-current-song (*mpd-current-song-fmt*). See the documentation for
+*mpd-modeline-fmt* for more information.
+
+### *mpd-modeline-fmt*
+
+@node STUMPTRAY,  , MPD, Modules
+@section Modules: STUMPTRAY
+
+@example
+(load-module "stumptray")
+@end example
+
+Then you can change background colors and enable stumpwm tray on the
+right corner of mode-line by code
+
+@example
+(setf stumptray:*tray-viwin-background* *mode-line-background-color*)
+(setf stumptray:*tray-hiwin-background* *mode-line-background-color*)
+(stumptray:add-mode-line-hooks)
+@end example
+
+!!! stumptray:stumptray
+
 @node Hacking, Command and Function Index, Modules, Top
 @chapter Hacking
 
@@ -1389,9 +1437,9 @@ For those of you who have worked on Free Software projects before,
 this part should probably be fairly intuitive.
 
 @menu
-* General Advice::              
-* Using git with StumpWM::      
-* Sending Patches::             
+* General Advice::
+* Using git with StumpWM::
+* Sending Patches::
 @end menu
 
 @node General Advice, Using git with StumpWM, Hacking, Hacking
