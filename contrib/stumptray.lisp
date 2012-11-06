@@ -79,6 +79,7 @@ first on the list by default.")
   (stumpwm::head-mode-line 
    (funcall *tray-head-selection-fn* 
 	    (stumpwm::screen-heads screen))))
+
 (defun current-tray ()
   (screen-tray (stumpwm:current-screen)))
 
@@ -672,11 +673,13 @@ passed to `xlib:process-event'."
 
 (defun add-mode-line-hooks ()
   (stumpwm:add-hook stumpwm:*new-mode-line-hook* #'new-mode-line-hook)
-  (stumpwm:add-hook stumpwm:*destroy-mode-line-hook* #'destroy-mode-line-hook))
+  (stumpwm:add-hook stumpwm:*destroy-mode-line-hook* #'destroy-mode-line-hook)
+  nil)
 
 (defun remove-mode-line-hooks ()
   (stumpwm:add-hook stumpwm:*new-mode-line-hook* #'new-mode-line-hook)
-  (stumpwm:add-hook stumpwm:*destroy-mode-line-hook* #'destroy-mode-line-hook))
+  (stumpwm:add-hook stumpwm:*destroy-mode-line-hook* #'destroy-mode-line-hook)
+  nil)
 
 (stumpwm:defcommand stumptray () ()
   "Enable tray for current screen"

@@ -21,7 +21,6 @@
   :serial t
 
   :depends-on (:cl-ppcre #-(or cmu clisp) :clx #+sbcl :sb-posix
-                         :xembed
                          :clx-truetype)
   :components ((:file "xlib-utils")
                (:file "package")
