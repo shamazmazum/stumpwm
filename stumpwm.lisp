@@ -263,6 +263,7 @@ of those expired."
              ((eq ret :hup-process)
                   (apply 'execv (first (argv)) (argv)))
              ((eq ret :restart))
-             (t 
+             (t
+              (run-hook *quit-hook*)
               ;; the number is the unix return code
               (return-from stumpwm 0))))))

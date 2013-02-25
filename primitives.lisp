@@ -40,6 +40,7 @@
           *focus-window-hook*
           *place-window-hook*
           *start-hook*
+          *quit-hook*
           *internal-loop-hook*
           *event-processing-hook*
           *focus-frame-hook*
@@ -192,6 +193,9 @@ window group and frame")
 
 (defvar *start-hook* '()
   "A hook called when stumpwm starts.")
+
+(defvar *quit-hook* '()
+  "A hook called when stumpwm quits.")
 
 (defvar *internal-loop-hook* '()
   "A hook called inside stumpwm's inner loop.")
