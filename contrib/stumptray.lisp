@@ -1,4 +1,4 @@
-;;;; System Tray for stumpwm. 
+;;;; System Tray for stumpwm.
 
 ;;;; Note: To run this you need to patch stumpwm to add
 ;;;; stumpwm:*event-processing-hook*
@@ -23,7 +23,6 @@
            ))
 
 (in-package :stumptray)
-
 
 (defstruct (tray)
   win 		  ;; Main window
