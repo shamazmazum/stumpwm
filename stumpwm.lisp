@@ -266,4 +266,5 @@ of those expired."
              (t
               (run-hook *quit-hook*)
               ;; the number is the unix return code
+              #+(or cmu clisp abcl) (ext:quit 0)
               (return-from stumpwm 0))))))
