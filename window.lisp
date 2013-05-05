@@ -315,9 +315,10 @@ _NET_WM_STATE_DEMANDS_ATTENTION set"
    (xwin-net-wm-name win)
    (xlib:wm-name win)))
 
-(defun maxmin-equal-p (win)
+(defun fullscreen-p (win)
   (let* ((xwin (window-xwin win))
-         (hints (xlib:wm-normal-hints xwin)))
+         (hints (xlib:wm-normal-hints xwin))
+         (screen (current-screen)))
     
     (with-accessors
      ((min-width xlib:wm-size-hints-min-width)
@@ -332,12 +333,14 @@ _NET_WM_STATE_DEMANDS_ATTENTION set"
        max-width
        min-width
        (= min-height max-height)
-       (= min-width max-width)))))
+       (= min-width max-width)
+       (= min-height (screen-height screen))
+       (= min-width (screen-width screen))))))
 
 ;; FIXME: should we raise the winodw or its parent?
 (defmethod raise-window (win)
   "Map the window if needed and bring it to the top of the stack. Does not affect focus."
-  (let ((maxmin-notequal (not (maxmin-equal-p win))))
+  (let ((maxmin-notequal (not (fullscreen-p win))))
     (when (window-urgent-p win)
       (window-clear-urgency win))
     (when (window-hidden-p win)
