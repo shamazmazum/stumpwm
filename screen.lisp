@@ -85,6 +85,10 @@ identity with a range check."
   (let ((root (screen-root screen)))
     (xlib:drawable-width root)))
 
+(defun screen-depth (screen)
+  (let ((root (screen-root screen)))
+    (xlib:drawable-depth root)))
+
 (defun find-screen (root)
   "Return the screen containing the root window."
   (find-if (lambda (s)

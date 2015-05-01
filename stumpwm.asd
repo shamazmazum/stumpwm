@@ -57,6 +57,7 @@
                (:file "module")
 	       (:file "stumpwm")
 	       (:file "font-rendering")
+               (:file "wallpaper")
 	       ;; keep this last so it always gets recompiled if
 	       ;; anything changes
 	       (:file "version")))
