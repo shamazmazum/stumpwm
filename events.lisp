@@ -29,6 +29,8 @@
 (defparameter *event-fn-table* (make-hash-table)
   "A hash of event types to functions")
 
+(defvar *current-event-time* nil)
+
 (defmacro define-stump-event-handler (event keys &body body)
   (let ((fn-name (gensym))
         (event-slots (gensym)))
@@ -70,14 +72,6 @@
         (setf (xlib:drawable-width xwin) width))
       (when (has-bw value-mask)
         (setf (xlib:drawable-border-width xwin) border-width)))))
-
-(defun update-configuration (win)
-  ;; Send a synthetic configure-notify event so that the window
-  ;; knows where it is onscreen.
-  (xwin-send-configuration-notify (window-xwin win)
-                                  (xlib:drawable-x (window-parent win))
-                                  (xlib:drawable-y (window-parent win))
-                                  (window-width win) (window-height win) 0))
 
 (define-stump-event-handler :configure-request (stack-mode #|parent|# window #|above-sibling|# x y width height border-width value-mask)
   (labels ((has-x () (= 1 (logand value-mask 1)))
@@ -123,10 +117,7 @@
             (t
              (dformat 1 "Updating Xinerama configuration for ~S.~%" screen)
              (if new-heads
-                 (progn
-                   (scale-screen screen new-heads)
-                   (mapc 'group-sync-all-heads (screen-groups screen))
-                   (update-mode-lines screen))
+                 (head-force-refresh screen new-heads)
                  (dformat 1 "Invalid configuration! ~S~%" new-heads)))))))))
 
 (define-stump-event-handler :map-request (parent send-event-p window)
@@ -402,8 +393,8 @@ converted to an atom is removed."
 (define-stump-event-handler :selection-request (requestor property selection target time)
   (send-selection requestor property selection target time))
 
-(define-stump-event-handler :selection-clear ()
-  (setf *x-selection* nil))
+(define-stump-event-handler :selection-clear (selection)
+  (setf (getf *x-selection* selection) nil))
 
 (defun find-message-window-screen (win)
   "Return the screen, if any, that message window WIN belongs."
@@ -566,6 +557,13 @@ converted to an atom is removed."
 (define-stump-event-handler :focus-out (window mode kind)
   (dformat 5 "~@{~s ~}~%" window mode kind))
 
+(define-stump-event-handler :focus-in (window mode)
+  (let ((win (find-window window)))
+    (when (and win (eq mode :normal))
+      (let ((screen (window-screen win)))
+        (unless (eq win (screen-focus screen))
+          (setf (screen-focus screen) win))))))
+
 ;;; Mouse focus
 
 (defun focus-all (win)
@@ -586,8 +584,6 @@ the window in it's frame."
         (update-all-mode-lines)))))
 
 (define-stump-event-handler :button-press (window code x y child time)
-  ;; Pass click to client
-  (xlib:allow-events *display* :replay-pointer time)
   (let (screen ml win)
     (cond
       ((and (setf screen (find-screen window)) (not child))
@@ -596,7 +592,9 @@ the window in it's frame."
       ((setf ml (find-mode-line-window window))
        (run-hook-with-args *mode-line-click-hook* ml code x y))
       ((setf win (find-window-by-parent window (top-windows)))
-       (group-button-press (window-group win) x y win)))))
+       (group-button-press (window-group win) x y win))))
+  ;; Pass click to client
+  (xlib:allow-events *display* :replay-pointer time))
 
 ;; Handling event :KEY-PRESS
 ;; (:DISPLAY #<XLIB:DISPLAY :0 (The X.Org Foundation R60700000)> :EVENT-KEY :KEY-PRESS :EVENT-CODE 2 :SEND-EVENT-P NIL :CODE 45 :SEQUENCE 1419 :TIME 98761213 :ROOT #<XLIB:WINDOW :0 96> :WINDOW #<XLIB:WINDOW :0 6291484> :EVENT-WINDOW #<XLIB:WINDOW :0 6291484> :CHILD
@@ -607,7 +605,8 @@ the window in it's frame."
   (declare (ignore display))
   (dformat 1 ">>> ~S~%" event-key)
   (let ((eventfn (gethash event-key *event-fn-table*))
-        (win (getf event-slots :window)))
+        (win (getf event-slots :window))
+        (*current-event-time* (getf event-slots :time)))
     (when eventfn
       ;; XXX: In both the clisp and sbcl clx libraries, sometimes what
       ;; should be a window will be a pixmap instead. In this case, we

@@ -25,8 +25,11 @@
 
 (in-package :stumpwm)
 
+#+ecl (require "clx")
+
 (export '(*suppress-abort-messages*
           *suppress-frame-indicator*
+          *suppress-window-placement-indicator*
           *timeout-wait*
           *timeout-frame-indicator-wait*
           *frame-indicator-text*
@@ -118,6 +121,7 @@
           concat
           data-dir-file
           dformat
+          flatten
           define-frame-preference
           redirect-all-output
           remove-hook
@@ -126,9 +130,38 @@
           command-mode-start-message
           command-mode-end-message
           split-string
-	  with-restarts-menu
+          with-restarts-menu
           with-data-file
-	  move-to-head))
+          move-to-head
+          format-expand
+
+          ;; Frame accessors
+          frame-x
+          frame-y
+          frame-width
+          frame-height
+
+          ;; Screen accessors
+          screen-heads
+          screen-root
+          screen-focus
+          screen-float-focus-color
+          screen-float-unfocus-color
+
+          ;; Window states
+          +withdrawn-state+
+          +normal-state+
+          +iconic-state+
+
+          ;; Modifiers
+          modifiers
+          modifiers-p
+          modifiers-alt
+          modifiers-altgr
+          modifiers-super
+          modifiers-meta
+          modifiers-hyper
+          modifiers-numlock))
 
 
 ;;; Message Timer
@@ -151,11 +184,34 @@ be an integer.")
 (defvar *suppress-frame-indicator* nil
   "Set this to T if you never want to see the frame indicator.")
 
+(defvar *suppress-window-placement-indicator* nil
+  "Set to T if you never want to see messages that windows were placed
+  according to rules.")
+
 (defvar *message-window-timer* nil
   "Keep track of the timer that hides the message window.")
 
+;;; Grabbed pointer
+
 (defvar *grab-pointer-count* 0
-  "The number of times the pointer has been grabbed")
+  "The number of times the pointer has been grabbed.")
+
+(defvar *grab-pointer-font* "cursor"
+  "The font used for the grabbed pointer.")
+
+(defvar *grab-pointer-character* 64
+  "ID of a character used for the grabbed pointer.")
+
+(defvar *grab-pointer-character-mask* 65
+  "ID of a character mask used for the grabbed pointer.")
+
+(defvar *grab-pointer-foreground*
+  (xlib:make-color :red 0.0 :green 0.0 :blue 0.0)
+  "The foreground color of the grabbed pointer.")
+
+(defvar *grab-pointer-background*
+  (xlib:make-color :red 1.0 :green 1.0 :blue 1.0)
+  "The background color of the grabbed pointer.")
 
 ;;; Hooks
 
@@ -350,6 +406,10 @@ are valid values.
 @item :bottom-left
 @item :bottom-right
 @item :center
+@item :top
+@item :left
+@item :right
+@item :bottom
 @end table")
 
 ;; line editor
@@ -365,6 +425,10 @@ are valid values.
 @item :bottom-left
 @item :bottom-right
 @item :center
+@item :top
+@item :left
+@item :right
+@item :bottom
 @end table")
 
 ;; default values. use the set-* functions to these attributes
@@ -372,7 +436,7 @@ are valid values.
 (defparameter +default-background-color+ "Black")
 (defparameter +default-window-background-color+ "Black")
 (defparameter +default-border-color+ "White")
-(defparameter +default-font-name+ "9x15bold")
+(defparameter +default-font-name+ "9x15")
 (defparameter +default-focus-color+ "White")
 (defparameter +default-unfocus-color+ "Black")
 (defparameter +default-float-focus-color+ "Orange")
@@ -443,7 +507,7 @@ Use the window's resource name.
    (float-unfocus-color :initform nil :accessor screen-float-unfocus-color)
    (msg-border-width :initform nil :accessor screen-msg-border-width)
    (frame-outline-width :initform nil :accessor screen-frame-outline-width)
-   (font :initform nil :accessor screen-font)
+   (fonts :initform '(nil) :accessor screen-fonts)
    (mapped-windows :initform nil :accessor screen-mapped-windows :documentation
     "A list of all mapped windows. These are the raw xlib:window's. window structures are stored in groups.")
    (withdrawn-windows :initform nil :accessor screen-withdrawn-windows :documentation
@@ -478,12 +542,19 @@ exist, in which case they go into the current group.")
    (last-msg-highlights :initform nil :accessor screen-last-msg-highlights)))
 
 (defstruct ccontext
+  screen
   win
   px
   gc
   default-fg
   default-bright
-  default-bg)
+  default-bg
+  fg
+  bg
+  brightp
+  reversep
+  color-stack
+  font)
 
 (defun screen-message-window (screen)
   (ccontext-win (screen-message-cc screen)))
@@ -493,6 +564,9 @@ exist, in which case they go into the current group.")
 
 (defun screen-message-gc (screen)
   (ccontext-gc (screen-message-cc screen)))
+
+(defun screen-font (screen)
+  (first (screen-fonts screen)))
 
 (defmethod print-object ((object frame) stream)
   (format stream "#S(frame ~d ~a ~d ~d ~d ~d)"
@@ -516,10 +590,11 @@ supported. By default, the frame labels are the 36 (lower-case)
 alphanumeric characters, starting with numbers 0-9.")
 
 (defun get-frame-number-translation (frame)
-  "Given a frame return its number translation using *frame-number-map* as a char."
+  "Given a frame return its number translation using *frame-number-map* as a
+char."
   (let ((num (frame-number frame)))
-    (or (and (< num (length *frame-number-map*))
-             (char *frame-number-map* num))
+    (if (< num (length *frame-number-map*))
+        (char *frame-number-map* num)
         ;; translate the frame number to a char. FIXME: it loops after 9
         (char (prin1-to-string num) 0))))
 
@@ -556,7 +631,7 @@ loads the rc file.")
 
 (defvar *interactivep* nil
   "True when a defcommand is executed from colon or a keybinding")
- 
+
 ;;; The restarts menu macro
 
 (defmacro with-restarts-menu (&body body)
@@ -733,7 +808,7 @@ before reopening.")
 
 (defun redirect-all-output (file)
   "Elect to redirect all output to the specified file. For instance,
-if you want everything to go to ~/stumpwm.d/debug-output.txt you would
+if you want everything to go to ~/.stumpwm.d/debug-output.txt you would
 do:
 
 @example
@@ -750,7 +825,6 @@ do:
 
 ;;; 
 ;;; formatting routines
-
 (defun format-expand (fmt-alist fmt &rest args)
   (let* ((chars (coerce fmt 'list))
          (output "")
@@ -828,7 +902,12 @@ size. For instance, @samp{%20t} crops the window's title to 20
 characters.")
 
 (defvar *window-info-format* "%wx%h %n (%t)"
-  "The format used in the info command. @xref{*window-format*} for formatting details.")
+  "The format used in the info command.
+  @var{*window-format*} for formatting details.")
+
+(defparameter *window-format-by-class* "%m%n %c %s%50t"
+  "The format used in the info winlist-by-class command.
+ @var{*window-format*} for formatting details.")
 
 (defvar *group-formatters* '((#\n group-map-number)
                              (#\s fmt-group-status)
@@ -864,8 +943,8 @@ The group's name.
 ;;      (font-ascent font)))
 
 (defvar *x-selection* nil
-  "This holds stumpwm's current selection. It is generally set
-when killing text in the input bar.")
+  "This is a plist of stumpwm's current selections. The different properties are
+generally set when killing text in the input bar.")
 
 (defvar *last-command* nil
   "Set to the last interactive command run.")
@@ -919,6 +998,11 @@ raise/map denial messages will be seen.")
                   (apply 'window-matches-properties-p window props))
                 deny-list)
        t)))
+
+(defun flatten (list)
+  "Flatten LIST"
+  (labels ( (mklist (x) (if (listp x) x (list x))) )
+    (mapcan #'(lambda (x) (if (atom x) (mklist x) (flatten x))) list)))
 
 (defun list-splice-replace (item list &rest replacements)
   "splice REPLACEMENTS into LIST where ITEM is, removing
@@ -1063,7 +1147,7 @@ input focus is transfered to the window you click on.")
 
 (defvar *root-click-focuses-frame* t
   "Set to NIL if you don't want clicking the root window to focus the frame
-  containing the pointer when *mouse-focus-policy* is :click.")
+  containing the pointer.")
 
 (defvar *banish-pointer-to* :head
   "Where to put the pointer when no argument is given to (banish-pointer) or the banish
@@ -1133,7 +1217,7 @@ of :error."
   (declare (ignorable if-exists))
   `(progn
      (ensure-directories-exist *data-dir*)
-     (with-open-file (,s ,(merge-pathnames *data-dir* file)
+     (with-open-file (,s ,(merge-pathnames file *data-dir*)
                          ,@keys)
        ,@body)))
 

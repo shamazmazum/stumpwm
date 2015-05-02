@@ -119,8 +119,7 @@
   (frame-raise-window group (window-frame win) win))
 
 (defmethod group-button-press ((group tile-group) x y (where (eql :root)))
-  (when (and (eq *mouse-focus-policy* :click)
-             *root-click-focuses-frame*)
+  (when *root-click-focuses-frame*
     (let* ((frame (find-frame group x y)))
       (when frame
         (focus-frame group frame)
@@ -174,7 +173,11 @@
     (sync-frame-windows group f)))
 
 ;;;;;
-
+;; (defun tile-group-frame-head (group head)
+;;   (let ((index (position head (group-heads group)))
+;;         (frame-tree (tile-group-frame-tree group)))
+;;     (when (> index (length frame-tree))
+;;       (elt frame-tree index))))
 (defun tile-group-frame-head (group head)
   (elt (tile-group-frame-tree group) (position head (group-heads group))))
 

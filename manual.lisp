@@ -49,10 +49,6 @@
 (in-package #:stumpwm)
 
 
-(load-module "stumptray")
-(load-module "mpd")
-(load-module "stumperwindowlayout")
-
 #+sbcl (require :sb-introspect)
 
 ;; handy for figuring out which symbol is borking the documentation

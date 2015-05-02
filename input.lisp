@@ -25,6 +25,7 @@
 
 (export '(*input-history-ignore-duplicates*
           *input-map*
+          *numpad-map*
 	  completing-read
 	  input-delete-region
 	  input-goto-char
@@ -70,6 +71,7 @@
           (define-key map (kbd "C-g") 'input-abort)
           (define-key map (kbd "ESC") 'input-abort)
           (define-key map (kbd "C-y") 'input-yank-selection)
+          (define-key map (kbd "C-Y") 'input-yank-clipboard)
           (define-key map (kbd "TAB") 'input-complete-forward)
           (define-key map (kbd "ISO_Left_Tab") 'input-complete-backward)
           (define-key map t 'input-self-insert)
@@ -92,6 +94,11 @@
 
 (defvar *input-history-ignore-duplicates* nil
   "Do not add a command to the input history if it's already the first in the list.")
+(defvar *numpad-map* '((87 10 . 16) (88  11 . 16) (89 12 . 16) (106 61 . 16)
+                       (83 13 . 16) (84  14 . 16) (85 15 . 16) (86  21 . 17)
+                       (79 16 . 16) (80  17 . 16) (81 18 . 16) (63  17 . 17) 
+                       (82 20 . 16) (104 36 . 16) (91 60 . 16) (90  19 . 16))
+  "A keycode to keycode map to re-wire numpads when the numlock key is active")
 
 ;;; keysym functions
 
@@ -125,11 +132,17 @@
 (defun shutdown-input-window (screen)
   (xlib:ungrab-keyboard *display*)
   (xlib:unmap-window (screen-input-window screen)))
-
-(defun input-handle-key-press-event (&rest event-slots &key event-key root code state &allow-other-keys)
+;; Hack to avoid clobbering input from numpads with numlock on.
+(defun input-handle-key-press-event (&rest event-slots 
+                                     &key event-key root code state 
+                                       &allow-other-keys)
   (declare (ignore event-slots root))
-  ;; FIXME: don't use a cons
-  (list* event-key code state))
+  (let ((numlock-on-p (= 2 (logand 2 (nth-value 4 (xlib:keyboard-control *display*)))))
+         (numpad-key (assoc code *numpad-map*)))
+    (when (and numlock-on-p numpad-key)
+      (setf code (first (rest numpad-key))
+            state (rest (rest numpad-key))))
+    (list* event-key code state)))
 
 (defun input-handle-selection-event (&key window selection property &allow-other-keys)
   (declare (ignore selection))
@@ -158,7 +171,7 @@
   (loop for ev = (xlib:process-event *display* :handler #'read-key-handle-event :timeout nil) do
        (when (and (consp ev)
                   (eq (first ev) :key-press))
-           (return (cdr ev)))))
+           (return (rest ev)))))
 
 (defun read-key-no-modifiers ()
   "Like read-key but never returns a modifier key."
@@ -172,7 +185,7 @@
               (return ev))
              ((and (consp ev)
                    (eq (first ev) :key-press))
-              (return (cdr ev))))))
+              (return (rest ev))))))
 
 (defun make-input-string (initial-input)
   (make-array (length initial-input) :element-type 'character :initial-contents initial-input
@@ -203,7 +216,9 @@ match with an element of the completions."
                (let* ((in (string-trim " " (input-line-string input)))
                       (compls (input-find-completions in *input-completions*)))
                  (and (consp compls)
-                      (string= in (car compls)))))
+                      (string= in (if (consp (car compls))
+                                      (caar compls)
+                                      (car compls))))))
              (key-loop ()
                (loop for key = (read-key-or-selection) do
                      (cond ((stringp key)
@@ -545,9 +560,19 @@ functions are passed this structure as their first argument."
 (defun input-yank-selection (input key)
   (declare (ignore key))
   ;; if we own the selection then just insert it.
-  (if *x-selection*
-      (input-insert-string input *x-selection*)
-      (xlib:convert-selection :primary :string (screen-input-window (current-screen)) :stumpwm-selection)))
+  (if (getf *x-selection* :primary)
+      (input-insert-string input (getf *x-selection* :primary))
+      (xlib:convert-selection :primary
+                              :string (screen-input-window (current-screen))
+                              :stumpwm-selection)))
+
+(defun input-yank-clipboard (input key)
+  (declare (ignore key))
+  (if (getf *x-selection* :clipboard)
+      (input-insert-string input (getf *x-selection* :clipboard))
+      (xlib:convert-selection :clipboard
+                              :string (screen-input-window (current-screen))
+                              :stumpwm-selection)))
 
 
 ;;; Misc functions

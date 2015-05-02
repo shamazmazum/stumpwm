@@ -25,8 +25,10 @@
 (in-package #:stumpwm)
 
 (export '(*groups-map*
+          *group-top-maps*
+          *movement-map*
           *help-map*
-	  set-prefix-key))
+          set-prefix-key))
 
 (defvar *escape-key* (kbd "C-t")
   "The escape key. Any keymap that wants to hang off the escape key
@@ -39,11 +41,13 @@ C-t.")
 (defvar *groups-map* nil
   "The keymap that group related key bindings sit on. It is bound to @kbd{C-t g} by default.")
 
+(defvar *exchange-window-map* nil
+  "The keymap that exchange-window key bindings sit on. It is bound to @kbd{C-t x} by default.")
+
 (defvar *help-map* nil
   "Help related bindings hang from this keymap")
 
 (defvar *group-top-maps* '((tile-group *tile-group-top-map*)
-                           (float-group *float-group-top-map*)
                            (group *group-top-map*))
   "An alist of the top level maps for each group type. For a given
 group, all maps whose type matches the given group are active. So for
@@ -57,8 +61,6 @@ from most specific groups to most general groups.")
 (defvar *group-root-map* nil)
 (defvar *tile-group-top-map* nil)
 (defvar *tile-group-root-map* nil)
-(defvar *float-group-top-map* nil)
-(defvar *float-group-root-map* nil)
 
 ;; Do it this way so its easier to wipe the map and get a clean one.
 (defmacro fill-keymap (map &rest bindings)
@@ -92,6 +94,7 @@ from most specific groups to most general groups.")
   (kbd "C-m") "lastmsg"
   (kbd "G")   "vgroups"
   (kbd "g")   '*groups-map*
+  (kbd "x")   '*exchange-window-map*
   (kbd "F1")  "gselect 1"
   (kbd "F2")  "gselect 2"
   (kbd "F3")  "gselect 3"
@@ -182,10 +185,6 @@ from most specific groups to most general groups.")
   (kbd "l")       "redisplay"
   (kbd "C-l")     "redisplay")
 
-(fill-keymap *float-group-top-map*)
-(fill-keymap *float-group-root-map*)
-             
-
 (fill-keymap *groups-map*
   (kbd "g")     "groups"
   (kbd "c")     "gnew"
@@ -215,7 +214,19 @@ from most specific groups to most general groups.")
   (kbd "8")     "gselect 8"
   (kbd "9")     "gselect 9"
   (kbd "0")     "gselect 10")
-
+(fill-keymap *exchange-window-map*
+             (kbd "Up")    "exchange-direction up"   
+             (kbd "Down")  "exchange-direction down" 
+             (kbd "Left")  "exchange-direction left" 
+             (kbd "Right") "exchange-direction right"
+             (kbd "p")     "exchange-direction up"   
+             (kbd "n")     "exchange-direction down" 
+             (kbd "b")     "exchange-direction left" 
+             (kbd "f")     "exchange-direction right"
+             (kbd "k")     "exchange-direction up"   
+             (kbd "j")     "exchange-direction down" 
+             (kbd "l")     "exchange-direction left" 
+             (kbd "h")     "exchange-direction right")    
 (fill-keymap *help-map*
   (kbd "v") "describe-variable"
   (kbd "f") "describe-function"

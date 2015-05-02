@@ -1,4 +1,3 @@
-(asdf:load-system :cl-jpeg)
 (defpackage stumpwm.contrib.image-jpeg
   (:use :cl :stumpwm))
 

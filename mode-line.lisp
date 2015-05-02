@@ -19,20 +19,22 @@
 (in-package :stumpwm)
 
 (export '(*mode-line-background-color*
-	  *mode-line-border-color*
-	  *mode-line-border-width*
-	  *mode-line-foreground-color*
-	  *mode-line-pad-x*
-	  *mode-line-pad-y*
-	  *mode-line-position*
-	  *mode-line-timeout*
+          *mode-line-border-color*
+          *mode-line-border-width*
+          *mode-line-foreground-color*
+          *mode-line-pad-x*
+          *mode-line-pad-y*
+          *mode-line-position*
+          *mode-line-timeout*
           *hidden-window-color*
-	  *screen-mode-line-format*
-	  *screen-mode-line-formatters*
+          *mode-line-highlight-template*
+          *screen-mode-line-format*
+          *screen-mode-line-formatters*
           add-screen-mode-line-formatter
-	  enable-mode-line
-	  toggle-mode-line
-	  bar-zone-color))
+          enable-mode-line
+          toggle-mode-line
+          bar
+          bar-zone-color))
 
 (defstruct mode-line
   screen
@@ -75,6 +77,9 @@
 fmt-head-window-list-hidden-windows formatter. To disable coloring
 hidden windows, set this to an empty string.")
 
+(defvar *mode-line-highlight-template* "^R~A^r"
+  "The string passed to FORMAT to highlight things in the mode line.")
+
 (defvar *screen-mode-line-format* "[^B%n^b] %W"
   "This variable describes what will be displayed on the modeline for each screen.
 Turn it on with the function TOGGLE-MODE-LINE or the mode-line command.
@@ -102,13 +107,32 @@ List all windows on the current head of the current group using
 
 @item %g
 List the groups using @var{*group-format*}
-@end table")
 
-(defvar *screen-mode-line-formatters* '((#\w fmt-window-list)
-                                        (#\g fmt-group-list)
-                                        (#\h fmt-head)
-                                        (#\n fmt-group)
+@item %n
+The current group's name
+
+@item %u
+Using @var{*window-format*}, return a 1 line list of the urgent windows, space seperated.
+
+@item %v
+Using @var{*window-format*}, return a 1 line list of the windows, space
+separated. The currently focused window is highlighted with
+fmt-highlight. Any non-visible windows are colored the
+*hidden-window-color*.
+
+@item %d
+Using @var{*time-modeline-string*}, print the time.
+
+@end table
+
+A number of modules have been written that extends the possible
+formatting strings.  See their documentation for details.")
+
+(defvar *screen-mode-line-formatters* '((#\h fmt-head)
+                                        (#\w fmt-window-list)
                                         (#\W fmt-head-window-list)
+                                        (#\g fmt-group-list)
+                                        (#\n fmt-group)
                                         (#\u fmt-urgent-window-list)
                                         (#\v fmt-head-window-list-hidden-windows)
                                         (#\d fmt-modeline-time))
@@ -145,7 +169,7 @@ timer.")
 ;; ',' and the ';' are provided as strings [not yet implemented]).
 
 (defun fmt-urgent-window-list (ml)
-  "Using *window-format*, return a 1 line list of the urgent windows, space seperated."
+  "Using `*window-format*', return a 1 line list of the urgent windows, space seperated."
    (format nil "~{~a~^ ~}"
           (mapcar (lambda (w)
                     (let ((str (format-expand *window-formatters* *window-format* w)))
@@ -177,7 +201,7 @@ timer.")
   (format nil "~a" (group-name (mode-line-current-group ml))))
 
 (defun fmt-highlight (s)
-  (format nil "^R~A^r" s))
+  (format nil *mode-line-highlight-template* s))
 
 (defun fmt-head-window-list (ml)
   "Using *window-format*, return a 1 line list of the windows, space seperated."
@@ -294,9 +318,10 @@ critical."
   (when (eq (mode-line-mode ml) :stump)
     ;; This is a StumpWM mode-line
     (setf (xlib:drawable-height (mode-line-window ml)) 
-          (+ (* (1+ (count #\Newline (mode-line-contents ml) :test #'equal))
-                (font-height (screen-font (current-screen))))
-             (* *mode-line-pad-y* 2))))
+          (+ (* 2 *mode-line-pad-y*)
+             (nth-value 1 (rendered-size (split-string (mode-line-contents ml)
+                                                       (string #\Newline))
+                                         (mode-line-cc ml))))))
   (setf (xlib:drawable-width (mode-line-window ml)) (- (frame-width (mode-line-head ml))
                                                        (* 2 (xlib:drawable-border-width (mode-line-window ml))))
         (xlib:drawable-height (mode-line-window ml)) (min (xlib:drawable-height (mode-line-window ml))
@@ -363,17 +388,18 @@ critical."
 
 (defun make-head-mode-line (screen head format)
   (let* ((w (make-mode-line-window (screen-root screen) screen))
-         (gc (make-mode-line-gc w screen))
-         (mode-line (make-mode-line :window w
-                                    :screen screen
-                                    :head head
-                                    :format format
-                                    :position *mode-line-position*
-                                    :cc (make-ccontext :gc gc
-                                                       :win w
-                                                       :default-fg (xlib:gcontext-foreground gc)
-                                                       :default-bg (xlib:gcontext-background gc)))))
-    mode-line))
+         (gc (make-mode-line-gc w screen)))
+    (make-mode-line :window w
+                    :screen screen
+                    :head head
+                    :format format
+                    :position *mode-line-position*
+                    :cc (make-ccontext :gc gc
+                                       :screen screen
+                                       :font (screen-font screen)
+                                       :win w
+                                       :default-fg (xlib:gcontext-foreground gc)
+                                       :default-bg (xlib:gcontext-background gc)))))
 
 (defun mode-line-current-group (ml)
   (screen-current-group (mode-line-screen ml)))
@@ -532,7 +558,7 @@ critical."
       (if (head-mode-line head)
           (when format
             (setf (mode-line-format (head-mode-line head)) format))
-          (toggle-mode-line screen head (or format *screen-mode-line-format*)))
+          (toggle-mode-line screen head (or format '*screen-mode-line-format*)))
       (when (head-mode-line head)
         (toggle-mode-line screen head))))
 

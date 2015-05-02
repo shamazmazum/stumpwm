@@ -1,4 +1,5 @@
 ;; Copyright (C) 2008 Julian Stecklina, Shawn Betts, Ivy Foster
+;; Copyright (C) 2014 David Bjergaard
 ;;
 ;;  This file is part of stumpwm.
 ;;
@@ -18,7 +19,7 @@
 
 ;; Commentary:
 ;;
-;; Use `set-contrib-dir' to set the location stumpwm searches for modules.
+;; Use `set-module-dir' to set the location stumpwm searches for modules.
 
 ;; Code:
 
@@ -26,49 +27,43 @@
 
 (export '(load-module
           list-modules
-	  *contrib-dir*
-	  set-contrib-dir
+          *module-dir*
+	  set-module-dir
           find-module))
 
-(defun module-string-as-directory (dir)
-  (unless (string= "/" (subseq dir (1- (length dir))))
-    (setf dir (concat dir "/")))
-  (pathname dir))
-
-(defvar *contrib-dir*
-  #.(asdf:system-relative-pathname (asdf:find-system :stumpwm)
-                                   (make-pathname :directory
-                                                  '(:relative "contrib")))
+(defvar *module-dir* (pathname-as-directory (concat (getenv "HOME") ".stumpwm.d/modules"))
   "The location of the contrib modules on your system.")
 
-(defcommand set-contrib-dir (dir) ((:string "Directory: "))
-    "Sets the location of the contrib modules"
-  (setf *contrib-dir* (module-string-as-directory dir)))
+(defmacro with-synced-asdf (&body body)
+  "Operate with `*MODULE-DIR*' within `ASDF:*CENTRAL-REGISTRY*'"
+  `(let ((asdf:*central-registry* (cons *module-dir* asdf:*central-registry*)))
+     ,@body))
+
+(defun set-module-dir (dir) 
+  "Sets the location of the for StumpWM to find modules"
+  (when (stringp dir)
+    (setf dir (pathname (concat dir "/"))))
+  (setf *module-dir* dir))
+
+(defun list-modules ()
+  "Return a list of the available modules."
+  (mapcar #'pathname-name
+          (remove-if-not
+           (lambda (name)
+             (string= (pathname-type name) "asd"))
+           (list-directory-recursive *module-dir* t))))
+
+(defun find-module (name)
+  "Find a module with the given name"
+  (if (find name (list-modules) :test #'string=) name))
 
 (define-stumpwm-type :module (input prompt)
   (or (argument-pop-rest input)
       (completing-read (current-screen) prompt (list-modules) :require-match t)))
 
-(defun list-modules ()
-  "Return a list of the available modules."
-  (mapcar 'pathname-name
-          (directory (make-pathname :defaults *contrib-dir*
-				    :name :wild
-				    :type "lisp"))))
-
-(defun find-module (name)
-  (probe-file (make-pathname :defaults *contrib-dir*
-                             :name name
-                             :type "lisp")))
-
 (defcommand load-module (name) ((:module "Load Module: "))
   "Loads the contributed module with the given NAME."
-  ;; FIXME: This should use ASDF in the future. And maybe there should
-  ;; be an extra stumpwm-contrib repository.
-  (when name
-    (let ((module (find-module name)))
+  (let ((module (find-module name)))
       (when module
-          (load module)))))
-
-
+        (asdf:operate 'asdf:load-op module))))
 ;; End of file

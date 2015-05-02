@@ -34,12 +34,22 @@
   "Load the user's .stumpwmrc file or the system wide one if that
 doesn't exist. Returns a values list: whether the file loaded (t if no
 rc files exist), the error if it didn't, and the rc file that was
-loaded. When CATCH-ERRORS is nil, errors are left to be handled further up. "
-  (let* ((user-rc (probe-file (merge-pathnames (user-homedir-pathname) #p".stumpwmrc")))
+loaded. When CATCH-ERRORS is nil, errors are left to be handled
+further up. "
+  (let* ((xdg-config-dir
+           (let ((dir (getenv "XDG_CONFIG_HOME")))
+             (if (or (not dir) (string= dir ""))
+                 (merge-pathnames  #p".config/" (user-homedir-pathname))
+                 dir)))
+         (user-rc
+           (probe-file (merge-pathnames #p".stumpwmrc" (user-homedir-pathname))))
+         (dir-rc
+           (probe-file (merge-pathnames #p".stumpwm.d/init.lisp" (user-homedir-pathname))))
+         (conf-rc
+           (probe-file (merge-pathnames #p"stumpwm/config" xdg-config-dir)))
          (etc-rc (probe-file #p"/etc/stumpwmrc"))
-         (rc (or user-rc etc-rc)))
+         (rc (or user-rc dir-rc conf-rc etc-rc)))
     (if rc
-        ;; TODO: Should we compile the file before we load it?
         (if catch-errors
             (handler-case (load rc)
               (error (c) (values nil (format nil "~a" c) rc))
@@ -86,7 +96,7 @@ The action is to call FUNCTION with arguments ARGS."
                 :function function
                 :args args)))
     (schedule-timer timer secs)
-    (setf *timer-list* (sort-timers (cons timer *timer-list*)))
+    (setf *timer-list* (merge 'list *timer-list* (list timer) #'< :key #'timer-time))
     timer))
 
 (defun cancel-timer (timer)
@@ -98,26 +108,21 @@ The action is to call FUNCTION with arguments ARGS."
   (setf (timer-time timer) (+ (get-internal-real-time)
                               (* when internal-time-units-per-second))))
 
-(defun sort-timers (timers)
-  "Return a new list of timers sorted by time to time out."
-  (sort (copy-list timers)
-        (lambda (a b)
-          (< (timer-time a) (timer-time b)))))
-
-(defun run-expired-timers (timers)
-  "Return a new list of valid timers and run the timer functions
-of those expired."
-  (let ((now (get-internal-real-time)))
-    (sort-timers (loop for i in timers
-                       with keepers = nil do
-                       (if (< (timer-time i) now)
-                           (progn
-                             (apply (timer-function i) (timer-args i))
-                             (when (timer-repeat i)
-                               (schedule-timer i (timer-repeat i))
-                               (push i keepers)))
-                           (push i keepers))
-                       finally (return keepers)))))
+(defun run-expired-timers ()
+  (let ((now (get-internal-real-time))
+	(timers *timer-list*)
+	(pending '())
+	(remaining '()))
+    (setf *timer-list*
+	  (dolist (timer timers (sort remaining #'< :key #'timer-time))
+	    (if (<= (timer-time timer) now)
+		(progn (push timer pending)
+		       (when (timer-repeat timer)
+			 (schedule-timer timer (timer-repeat timer))
+			 (push timer remaining)))
+		(push timer remaining))))
+    (dolist (timer pending)
+      (apply (timer-function timer) (timer-args timer)))))
 
 (defun get-next-timeout (timers)
   "Return the number of seconds until the next timeout or nil if there are no timers."
@@ -161,21 +166,20 @@ of those expired."
                     (continue)))
              ;; and if that fails treat it like a top level error.
              (perform-top-level-error-action c))))
-       ;; ;; Note: process-event appears to hang for an unknown
-       ;; ;; reason. This is why it is passed a timeout in hopes that
-       ;; ;; this will keep it from hanging.
+       ;; Note: process-event appears to hang for an unknown
+       ;; reason. This is why it is passed a timeout in hopes that
+       ;; this will keep it from hanging.
        (xlib:display-finish-output *display*)
        (let* ((to (get-next-timeout *timer-list*))
               (timeout (and to (ceiling to)))
               (nevents (xlib:event-listen *display* timeout)))
          (dformat 10 "timeout: ~a~%" timeout)
          (when timeout
-           (setf *timer-list* (run-expired-timers *timer-list*)))
+           (run-expired-timers))
          (xlib:with-event-queue (*display*)
            (when nevents
              (run-hook *event-processing-hook*)
-             (xlib:process-event *display* :handler #'handle-event :timeout 0))))
-       )))
+             (xlib:process-event *display* :handler #'handle-event :timeout 0)))))))
 
 (defun parse-display-string (display)
   "Parse an X11 DISPLAY string and return the host and display from it."
@@ -261,7 +265,7 @@ of those expired."
              ;; we need to jump out of the event loop in order to hup
              ;; the process because otherwise we get errors.
              ((eq ret :hup-process)
-                  (apply 'execv (first (argv)) (argv)))
+              (apply 'execv (first (argv)) (argv)))
              ((eq ret :restart))
              (t
               (run-hook *quit-hook*)

@@ -114,7 +114,8 @@
 
 (defun add-head (screen head)
   (dformat 1 "Adding head #~D~%" (head-number head))
-  (setf (screen-heads screen) (sort (push head (screen-heads screen)) #'< :key 'head-number))
+  (setf (screen-heads screen) (sort (push head (screen-heads screen)) #'<
+                                    :key 'head-number))
   (dolist (group (screen-groups screen))
     (group-add-head group head)))
 
@@ -137,23 +138,30 @@
         (head-height oh) (head-height nh)))
 
 (defun scale-screen (screen heads)
-  "Scale all frames of all groups of SCREEN to match the dimensions
-  of HEADS."
-  (when (< (length heads) (length (screen-heads screen)))
-    ;; Some heads were removed (or cloned), try to guess which.
-    (dolist (oh (screen-heads screen))
-      (dolist (nh heads)
-        (when (and (= (head-x nh) (head-x oh))
-                   (= (head-y nh) (head-y oh)))
-          ;; Same screen position; probably the same head.
-          (setf (head-number nh) (head-number oh)))))
-    ;; Actually remove the missing heads.
-    (dolist (head (set-difference (screen-heads screen) heads :key 'head-number))
-      (remove-head screen head)))
-  (loop
-   for nh in heads
-   as oh = (find (head-number nh) (screen-heads screen) :key 'head-number)
-   do (if oh
-          (scale-head screen oh nh)
-          (add-head screen nh))))
+  "Scale all frames of all groups of SCREEN to match the dimensions of HEADS."
+  (let ((oheads (screen-heads screen)))
+    (when (< (length heads) (length oheads))
+      ;; Some heads were removed (or cloned), try to guess which.
+      (dolist (oh oheads)
+        (dolist (nh heads)
+          (when (= (head-number oh) (head-number nh))
+            ;; Same frame number, probably the same head
+            (setf (head-number nh) (head-number oh))))))
+    (dolist (h (set-difference oheads heads :test '= :key 'head-number))
+      (remove-head screen h))
+    (dolist (h (set-difference heads oheads :test '= :key 'head-number))
+      (add-head screen h))
+    (dolist (h (intersection heads oheads :test '= :key 'head-number))
+      (let ((nh (find (head-number h) heads  :test '= :key 'head-number))
+            (oh (find (head-number h) oheads :test '= :key 'head-number)))
+        (scale-head screen oh nh)))))
 
+(defun head-force-refresh (screen new-heads)
+  (scale-screen screen new-heads)    
+  (mapc 'group-sync-all-heads (screen-groups screen))
+  (update-mode-lines screen))
+
+(defcommand refresh-heads (&optional (screen (current-screen))) ()
+  "Refresh screens in case a monitor was connected, but a
+  ConfigureNotify event was snarfed by another program."
+  (head-force-refresh screen (make-screen-heads screen (screen-root screen))))

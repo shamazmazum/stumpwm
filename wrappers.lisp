@@ -197,7 +197,9 @@
 (defun bytes-to-string (data)
   "Convert a list of bytes into a string."
   #+sbcl (handler-bind
-             ((sb-impl::octet-decoding-error #'(lambda (c) (invoke-restart 'use-value "?"))))
+             ((sb-impl::octet-decoding-error #'(lambda (c)
+                                                 (declare (ignore c))
+                                                 (invoke-restart 'use-value "?"))))
           (sb-ext:octets-to-string
            (make-array (length data) :element-type '(unsigned-byte 8) :initial-contents data)))
   #+clisp
@@ -274,16 +276,8 @@ they should be windows. So use this function to make a window out of them."
   #+clisp (mapcar #'car (directory pathspec :full t))
   #+lispworks (directory pathspec :link-transparency nil)
   #+openmcl (directory pathspec :follow-links nil)
-  ;; FIXME: seems like there ought to be a less cumbersome way to run
-  ;; different code based on the version.
-  #+sbcl (macrolet ((dir (p)
-                      (if (>= (parse-integer (third (split-seq (lisp-implementation-version) '(#\.))) :junk-allowed t)
-                              24)
-                          `(directory ,p :resolve-symlinks nil)
-                          `(directory ,p))))
-           (dir pathspec))
-  #-(or clisp cmu lispworks openmcl sbcl scl) (directory pathspec)
-  )
+  #+sbcl (directory pathspec :resolve-symlinks nil)
+  #-(or clisp cmu lispworks openmcl sbcl scl) (directory pathspec))
 
 ;;; CLISP does not include features to distinguish different Unix
 ;;; flavours (at least until version 2.46). Until this is fixed, use a
@@ -374,6 +368,7 @@ regarding files in sysfs. Data is read in chunks of BLOCKSIZE bytes."
     (setf (sb-alien:deref argv (length arguments)) nil)
     (sb-alien:alien-funcall (sb-alien:extern-alien "execv" (function sb-alien:int sb-alien:c-string (* sb-alien:c-string)))
                             prg (sb-alien:cast argv (* sb-alien:c-string))))
+  ;; FIXME: Using unexported and undocumented functionality isn't nice
   #+clisp
   (funcall (ffi::find-foreign-function "execv"
                                        (ffi:parse-c-type '(ffi:c-function
@@ -382,7 +377,7 @@ regarding files in sysfs. Data is read in chunks of BLOCKSIZE bytes."
                                                             (args (ffi:c-array-ptr ffi:c-string))
                                                             )
                                                            (:return-type ffi:int)))
-                                       nil nil nil)
+                                       nil nil nil nil)
            program
            (coerce arguments 'array))
   #-(or sbcl clisp)

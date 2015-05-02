@@ -27,6 +27,12 @@
 (export '(current-screen
           current-window
           screen-current-window
+	  screen-number
+	  screen-groups
+	  screen-windows
+	  screen-height
+	  screen-width
+          screen-depth
           set-fg-color
           set-bg-color
           set-border-color
@@ -228,7 +234,8 @@ identity with a range check."
 
 (defun update-border-for-screen (screen)
   (setf (xlib:drawable-border-width (screen-input-window screen)) (screen-msg-border-width screen)
-        (xlib:drawable-border-width (screen-message-window screen)) (screen-msg-border-width screen)))
+        (xlib:drawable-border-width (screen-message-window screen)) (screen-msg-border-width screen)
+        (xlib:drawable-border-width (screen-frame-window screen)) (screen-msg-border-width screen)))
 
 (defun update-border-all-screens ()
   "After setting the border width call this to sync any existing windows."
@@ -301,8 +308,7 @@ there is more than one frame."
   (set-any-color screen-float-unfocus-color color))
 
 (defun set-msg-border-width (width)
-  "Set the border width for the message bar and input
-bar."
+  "Set the border width for the message bar, input bar and frame indicator."
   (check-type width (integer 0))
   (dolist (i *screen-list*)
     (setf (screen-msg-border-width i) width))
@@ -318,23 +324,17 @@ bar."
   t)
 
 (defun set-font (font)
-  "Set the font for the message bar and input bar."
-  (when (font-exists-p font)
-    (dolist (i *screen-list*)
-      (let ((fobj (open-font *display* font)))
-        (close-font (screen-font i))
-        (setf (screen-font i) fobj)
-        (when (typep fobj 'xlib:font)
-          (setf
-           (xlib:gcontext-font (screen-message-gc i)) fobj))
-        ;; update the modelines too
-        (dolist (h (screen-heads i))
-          (when (and (head-mode-line h)
-                     (eq (mode-line-mode (head-mode-line h)) :stump))
-            (when (typep fobj 'xlib:font)
-              (setf (xlib:gcontext-font (mode-line-gc (head-mode-line h))) fobj))
-            (resize-mode-line (head-mode-line h))
-            (sync-mode-line (head-mode-line h))))))
+  "Set the font(s) for the message bar and input bar."
+  (when (if (listp font)
+            (every #'identity (mapcar #'font-exists-p font))
+            (font-exists-p font))
+    (dolist (screen *screen-list*)
+      (let ((fonts (if (listp font)
+                       (mapcar (lambda (font) (open-font *display* font))
+                               font)
+                       (list (open-font *display* font)))))
+        (mapc #'close-font (screen-fonts screen))
+        (setf (screen-fonts screen) fonts)))
     t))
 
 (defmacro with-current-screen (screen &body body)
@@ -458,7 +458,7 @@ FOCUS-WINDOW is an extra window used for _NET_SUPPORTING_WM_CHECK."
             (screen-host screen) host
             (screen-groups screen) (list group)
             (screen-current-group screen) group
-            (screen-font screen) font
+            (screen-fonts screen) (list font)
             (screen-fg-color screen) fg
             (screen-bg-color screen) bg
             (screen-win-bg-color screen) win-bg
@@ -475,6 +475,8 @@ FOCUS-WINDOW is an extra window used for _NET_SUPPORTING_WM_CHECK."
             (screen-frame-window screen) frame-window
             (screen-ignore-msg-expose screen) 0
             (screen-message-cc screen) (make-ccontext :win message-window
+                                                      :screen screen
+                                                      :font font
                                                       :gc (xlib:create-gcontext
                                                            :drawable message-window
                                                            :font (when (typep font 'xlib:font) font)
@@ -492,7 +494,7 @@ FOCUS-WINDOW is an extra window used for _NET_SUPPORTING_WM_CHECK."
       (netwm-set-properties screen focus-window)
       (update-colors-for-screen screen)
       (update-color-map screen)
-      (xwin-grab-keys focus-window screen)
+      (xwin-grab-keys focus-window group)
       screen)))
 
 ;;; Screen commands

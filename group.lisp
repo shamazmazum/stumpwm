@@ -24,7 +24,17 @@
 
 (in-package #:stumpwm)
 
-(export '(current-group))
+(export '(current-group group-windows move-window-to-group add-group
+          ;; Group accessors
+          group group-screen group-windows group-number group-name
+          ;; Group API
+          group-startup group-add-window group-delete-window group-wake-up
+          group-suspend group-current-window group-current-head
+          group-resize-request group-move-request group-raise-request
+          group-lost-focus group-indicate-focus group-focus-window
+          group-button-press group-root-exposure group-add-head
+          group-remove-head group-resize-head group-sync-all-heads
+          group-sync-head))
 
 (defvar *default-group-type* 'tile-group
   "The type of group that should be created by default.")
@@ -441,6 +451,13 @@ the default group formatting and window formatting, respectively."
   (when (and to-group
              (current-window))
     (move-window-to-group (current-window) to-group)))
+
+(defcommand gmove-and-follow (to-group) ((:group "To Group: "))
+  "Move the current window to the specified group, and switch to it."
+  (let ((window (current-window)))
+    (gmove to-group)
+    (gselect to-group)
+    (when window (really-raise-window window))))
 
 (defcommand gmove-marked (to-group) ((:group "To Group: "))
   "move the marked windows to the specified group."

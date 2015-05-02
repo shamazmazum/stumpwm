@@ -25,24 +25,9 @@
 
 (in-package :stumpwm)
 
-;; Wow, is there an easier way to do this?
-(defmacro def-thing-attr-macro (thing hash-slot)
-  (let ((attr (gensym "ATTR"))
-        (obj (gensym "METAOBJ"))
-        (val (gensym "METAVAL")))
-    `(defmacro ,(intern1 (format nil "DEF-~a-ATTR" thing)) (,attr)
-      "Create a new attribute and corresponding get/set functions."
-      (let ((,obj (gensym "OBJ"))
-            (,val (gensym "VAL")))
-        `(progn
-          (defun ,(intern1 (format nil ,(format nil "~a-~~a" thing) ,attr)) (,,obj)
-            (gethash ,,attr (,(quote ,hash-slot) ,,obj)))
-          (defun (setf ,(intern1 (format nil ,(format nil "~a-~~a" thing) ,attr))) (,,val ,,obj)
-            (setf (gethash ,,attr (,(quote ,hash-slot) ,,obj))) ,,val))))))
+(export '(grab-pointer ungrab-pointer))
 
-
 ;;; keyboard helper functions
-
 (defun key-to-keycode+state (key)
   (let ((code (xlib:keysym->keycodes *display* (key-keysym key))))
     (cond ((eq (xlib:keycode->keysym *display* code 0) (key-keysym key))
@@ -101,15 +86,13 @@
 (defun grab-pointer (screen)
   "Grab the pointer and set the pointer shape."
   (incf *grab-pointer-count*)
-  (let* ((white (xlib:make-color :red 1.0 :green 1.0 :blue 1.0))
-         (black (xlib:make-color :red 0.0 :green 0.0 :blue 0.0))
-         (cursor-font (xlib:open-font *display* "cursor"))
+  (let* ((cursor-font (xlib:open-font *display* *grab-pointer-font*))
          (cursor (xlib:create-glyph-cursor :source-font cursor-font
-                                           :source-char 64
+                                           :source-char *grab-pointer-character*
                                            :mask-font cursor-font
-                                           :mask-char 65
-                                           :foreground black
-                                           :background white)))
+                                           :mask-char *grab-pointer-character-mask*
+                                           :foreground *grab-pointer-foreground*
+                                           :background *grab-pointer-background*)))
     (xlib:grab-pointer (screen-root screen) nil :owner-p nil
                        :cursor cursor)))
 

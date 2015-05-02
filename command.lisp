@@ -25,14 +25,15 @@
 (in-package #:stumpwm)
 
 (export '(argument-line-end-p
-	  argument-pop
-	  argument-pop-or-read
-	  argument-pop-rest
-	  define-stumpwm-command
+          argument-pop
+          argument-pop-or-read
+          argument-pop-rest
+          define-stumpwm-command
           defcommand
           defcommand-alias
-	  define-stumpwm-type
-	  run-commands))
+          define-stumpwm-type
+          run-commands
+          %interactivep%))
 
 (defstruct command-alias
   from to)
@@ -60,6 +61,11 @@
 *command-hash*. The local variable %interactivep% can be used to check
 if the command was called interactively. If it is non-NIL then it was
 called from a keybinding or from the colon command.
+
+The NAME argument can be a string, or a list of two symbols. If the
+latter, the first symbol names the command, and the second indicates
+the type of group under which this command will be usable. Currently,
+tile-group and floating-group are the two possible values.
 
 INTERACTIVE-ARGS is a list of the following form: ((TYPE PROMPT) (TYPE PROMPT) ...)
 
@@ -134,6 +140,7 @@ out, an element can just be the argument type."
 	     (*interactivep* nil))
 	 (declare (ignorable %interactivep%))
 	 ,@body))
+     (export ',name)
      (setf (gethash ',name *command-hash*)
            (make-command :name ',name
                          :class ',group
@@ -486,9 +493,7 @@ user aborted."
                               (if (and (null prompt)
                                        (argument-line-end-p arg-line))
                                   (loop-finish)
-                                  ;; FIXME: Is it presumptuous to assume NIL means abort?
-                                  (or (funcall fn arg-line prompt)
-                                      (throw 'error :abort)))))))
+                                  (funcall fn arg-line prompt))))))
       ;; Did the whole string get parsed?
       (unless (or (argument-line-end-p arg-line)
                   (position-if 'alphanumericp (argument-line-string arg-line) :start (argument-line-start arg-line)))
@@ -519,6 +524,7 @@ user aborted."
                                                             (backtrace-string) ""))))))
               (parse-and-run-command cmd))
           (eval-command-error (err-text)
+            :interactive (lambda () nil)
             (values err-text t)))
       ;; interactive commands update the modeline
       (update-all-mode-lines)
