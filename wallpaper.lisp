@@ -4,18 +4,15 @@
           load-wallpaper
           supported-wallpaper-types))
 
-(defparameter *background-pixmaps* (make-hash-table)
-  "Root windows background pixmaps")
-
 (defparameter *image-loaders* nil
   "Functions which load image files into Ximage")
 
-(defun clear-wallpaper (screen)
-  (multiple-value-bind (old-pixmap old-pixmap-p)
-      (gethash screen *background-pixmaps*)
-    (when old-pixmap-p
-      (xlib:free-pixmap old-pixmap)
-      (remhash screen *background-pixmaps*))))
+(defun free-wallpaper (screen)
+  (let* ((root-window (screen-root screen))
+         (old-pixmap (xlib:get-property root-window :_XSETROOT_ID
+                                        :type :PIXMAP :transform
+                                        (lambda (id) (xlib::lookup-pixmap (xlib:window-display root-window) id)))))
+    (if old-pixmap (xlib:free-pixmap (first old-pixmap)))))
 
 (defun set-wallpaper (screen image)
   (if (not
@@ -24,13 +21,14 @@
             (= (screen-depth screen) (xlib:image-depth image))))
       (throw 'error "Bad Match"))
 
-  (clear-wallpaper screen)
+  (free-wallpaper screen)
   (let* ((root-window (screen-root screen))
          (pixmap (xlib:image-pixmap root-window image)))
 
-    ;; FIXME: How to put a pixmap in _XSETROOT_ID property?
-    (setf (xlib:window-background root-window) pixmap
-          (gethash screen *background-pixmaps*) pixmap)
+    (setf (xlib:window-background root-window) pixmap)
+    ;; Update _XSETROOT_ID property so we can free the pixmap later
+    (xlib:change-property root-window :_XSETROOT_ID (list pixmap) :PIXMAP 32
+                          :transform #'xlib:pixmap-id)
     (xlib:clear-area root-window)))
 
 (defun load-wallpaper (screen name)
