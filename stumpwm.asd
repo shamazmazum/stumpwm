@@ -21,8 +21,7 @@
   :serial t
   :depends-on (:cl-ppcre #-cmu :clx #+sbcl :sb-posix
                          :clx-truetype)
-  :components ((:file "xlib-utils")
-               (:file "package")
+  :components ((:file "package")
 	       (:file "primitives")
                (:file "workarounds")
                (:file "wrappers")

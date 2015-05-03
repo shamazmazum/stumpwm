@@ -25,11 +25,14 @@
 (in-package #:stumpwm)
 
 (export '(*default-window-name*
+          *default-transparency*
           define-window-slot
           set-normal-gravity
           set-maxsize-gravity
           set-transient-gravity
-          set-window-geometry))
+          set-window-geometry
+          window-transparency
+          window-shadow))
 
 (export
   '(window window-xwin window-width window-height window-x window-y
@@ -45,6 +48,9 @@
 
 (defvar *default-window-name* "Unnamed"
   "The name given to a window that does not supply its own name.")
+
+(defvar *default-transparency* 0.9
+  "Default transparency for newly created windows")
 
 (defclass window ()
   ((xwin    :initarg :xwin    :accessor window-xwin)
@@ -774,6 +780,36 @@ and bottom_end_x."
 (defun netwm-remove-window (window)
   (xlib:delete-property (window-xwin window) :_NET_WM_DESKTOP))
 
+;;; Transparency support
+(defun window-transparency (window)
+  "Return the window transparency"
+  (if (not (window-modal-p  window))
+      (float (/ (or (first (xlib:get-property (window-parent window)
+                                              :_NET_WM_WINDOW_OPACITY)) #xffffffff)  #xffffffff))))
+
+(defun (setf window-transparency) (value window)
+  "Set the window transparency"
+  (if (not (window-modal-p  window))
+      (let ((clipped-value (max 0 (min 1 value))))
+        (xlib:change-property (window-parent window) :_NET_WM_WINDOW_OPACITY
+                              (list (round (* #xffffffff clipped-value)))
+                              :cardinal 32)
+        clipped-value)))
+
+(defun window-shadow (window)
+  "Return the window shadow"
+  (if (not (window-modal-p  window))
+      (xlib:get-property (window-parent window) :_NET_WM_WINDOW_SHADOW)))
+
+(defun (setf window-shadow) (value window)
+  "Set the window shadow"
+  (if (not (window-modal-p  window))
+      (let ((clipped-value (logand (abs value) #xffffffff)))
+        (xlib:change-property (window-parent window) :_NET_WM_WINDOW_SHADOW
+                              (list clipped-value)
+                              :cardinal 32)
+        clipped-value)))
+
 (defun process-mapped-window (screen xwin)
   "Add the window to the screen's mapped window list and process it as
 needed."
@@ -786,6 +822,7 @@ needed."
     (register-window window)
     (reparent-window screen window)
     (netwm-set-allowed-actions window)
+    (setf (window-transparency window) *default-transparency*)
     (let ((placement-data (place-window screen window)))
       (apply 'group-add-window (window-group window) window placement-data)
       ;; If the placement rule matched then either the window's group
@@ -947,15 +984,6 @@ needed."
   "Kill the client associated with window."
   (dformat 3 "Kill client~%")
   (xlib:kill-client *display* (xlib:window-id window)))
-
-(defun window-transparency (window)
-  "Return the window transparency"
-  (xlib:window-transparency (window-xwin window)))
-  
-(defun (setf window-transparency) (value window)
-  "Set the window transparency"
-  (setf (xlib:window-transparency (window-xwin window)) value))
-
 
 (defun select-window-from-menu (windows fmt &optional prompt)
   "Allow the user to select a window from the list passed in @var{windows}.  The
@@ -1166,3 +1194,19 @@ be used to override the default window formatting."
     (set-window-geometry window
                          :width w
                          :height h)))
+
+(defcommand set-window-transparency (window number)
+  ((:window-name "Select: ")
+   (:float "Transparency: "))
+  "Set window transparency"
+  (let ((win (find window (group-windows (current-group))
+                   :test #'string= :key #'window-name)))
+    (setf (window-transparency win) number)))
+
+(defcommand set-window-shadow (window number)
+  ((:window-name "Select: ")
+   (:number "Shadow: "))
+  "Set window shadow value"
+    (let ((win (find window (group-windows (current-group))
+                     :test #'string= :key #'window-name)))
+      (setf (window-shadow win) number)))

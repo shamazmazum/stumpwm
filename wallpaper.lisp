@@ -9,7 +9,7 @@
   "Functions which load image files into Ximage")
 
 (defun set-wallpaper-property (screen pixmap)
-  (xlib:change-property (screen-root screen) :_XSETROOT_ID (list pixmap) :PIXMAP 32
+  (xlib:change-property (screen-root screen) :_XROOTPMAP_ID (list pixmap) :PIXMAP 32
                         :transform #'xlib:pixmap-id))
 
 (defun get-wallpaper-property (screen)
@@ -25,7 +25,9 @@
     (when old-pixmaps
       (xlib:kill-client *display* (xlib:pixmap-id (car old-pixmaps)))
       #+nil (xlib:free-pixmap old-pixmap)
-      (xlib:delete-property (screen-root screen) :_XSETROOT_ID))))
+      (xlib:delete-property (screen-root screen) :_XSETROOT_ID)))
+  ;; Also delete :_XROOTPMAP_ID here for compositing manager
+  (xlib:delete-property (screen-root screen) :_XROOTPMAP_ID))
 
 (defun set-wallpaper (screen image)
   (let ((image-width (xlib:image-width image))
@@ -61,7 +63,7 @@
     (setf (xlib:window-background root-window) pixmap)
     ;; Update _XSETROOT_ID property so we can free the pixmap later
     ;; FIXME: Do not use it, as we can shoot ourselves later
-    #+nil (set-wallpaper-property screen pixmap)
+    (set-wallpaper-property screen pixmap)
     ;; Rather free it now, as it is not used anywhere else currently
     #+t (xlib:free-pixmap pixmap)
     (xlib:clear-area root-window))))

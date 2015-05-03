@@ -56,6 +56,18 @@
    (lambda (c s)
      (format s "command ~a doesn't have a docstring" (slot-value c 'command)))))
 
+(defun parse-float (string)
+  "Extract a float number from a string"
+  (let ((position (position #\. string)))
+    (let ((integer (parse-integer string :start 0 :end position))
+          (mantissa 0.0))
+
+      (when position
+        (let ((mantissa-int (parse-integer string :start (1+ position)))
+              (divizor (expt 10 (- (length string) position 1))))
+          (setq mantissa (/ mantissa-int divizor))))
+      (+ (float integer) mantissa))))
+
 (defmacro defcommand (name (&rest args) (&rest interactive-args) &body body)
   "Create a command function and store its interactive hints in
 *command-hash*. The local variable %interactivep% can be used to check
@@ -89,6 +101,8 @@ A key sequence starting from *TOP-MAP*
 An existing window number
 @item :number
 An integer number
+@item :float
+A float number
 @item :string
 A string
 @item :key
@@ -371,6 +385,15 @@ then describes the symbol."
           (declare (ignore c))
           (throw 'error "Number required."))))))
 
+(define-stumpwm-type :float (input prompt)
+  (let ((n (or (argument-pop input)
+               (read-one-line (current-screen) prompt))))
+    (when n
+      (handler-case
+          (parse-float n)
+        (parse-error (c)
+          (declare (ignore c))
+          (throw 'error "Float required."))))))
 
 (define-stumpwm-type :string (input prompt)
   (or (argument-pop input)
