@@ -74,7 +74,9 @@
    (normal-hints :initarg :normal-hints :accessor window-normal-hints)
    (marked  :initform nil     :accessor window-marked)
    (plist   :initarg :plist   :accessor window-plist)
-   (fullscreen :initform nil  :accessor window-fullscreen)))
+   (fullscreen :initform nil  :accessor window-fullscreen)
+   (transparency :initform 1.0 :accessor window-transparency
+                 :documentation "Window transparency from 0 to 1")))
 
 (defmethod print-object ((object window) stream)
   (format stream "#S(~a ~s #x~x)" (type-of object) (window-name object) (window-id object)))
@@ -781,20 +783,19 @@ and bottom_end_x."
   (xlib:delete-property (window-xwin window) :_NET_WM_DESKTOP))
 
 ;;; Transparency support
-(defun window-transparency (window)
-  "Return the window transparency"
-  (if (not (window-modal-p  window))
-      (float (/ (or (first (xlib:get-property (window-parent window)
-                                              :_NET_WM_WINDOW_OPACITY)) #xffffffff)  #xffffffff))))
-
-(defun (setf window-transparency) (value window)
+(defun set-transparency-property (value window)
   "Set the window transparency"
+  (xlib:change-property (window-parent window) :_NET_WM_WINDOW_OPACITY
+                        (list (floor (* #xffffffff value)))
+                        :cardinal 32))
+
+(defmethod (setf window-transparency) (value (window window))
   (if (not (window-modal-p  window))
       (let ((clipped-value (max 0 (min 1 value))))
-        (xlib:change-property (window-parent window) :_NET_WM_WINDOW_OPACITY
-                              (list (round (* #xffffffff clipped-value)))
-                              :cardinal 32)
-        clipped-value)))
+        (setf (slot-value window 'transparency) clipped-value)
+        (if (not (window-fullscreen window))
+            (set-transparency-property clipped-value window))))
+  (window-transparency window))
 
 (defun window-shadow (window)
   "Return the window shadow"

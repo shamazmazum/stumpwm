@@ -461,14 +461,24 @@ converted to an atom is removed."
     (case action
       (0                                ; _NET_WM_STATE_REMOVE
        (when fullscreen-p
-         (deactivate-fullscreen window)))
+         (deactivate-fullscreen window)
+         (set-transparency-property
+          (window-transparency window) window)))
       (1                                ; _NET_WM_STATE_ADD
        (unless fullscreen-p
-         (activate-fullscreen window)))
+         (activate-fullscreen window)
+         (set-transparency-property
+          1 window)))
       (2                                ; _NET_WM_STATE_TOGGLE
-       (if fullscreen-p
-           (deactivate-fullscreen window)
-           (activate-fullscreen window))))))
+       (cond
+         (fullscreen-p
+          (deactivate-fullscreen window)
+          (set-transparency-property
+          (window-transparency window) window))
+         (t
+          (activate-fullscreen window)
+          (set-transparency-property
+           1 window)))))))
 
 (defun maybe-map-window (window)
   (if (deny-request-p window *deny-map-request*)
