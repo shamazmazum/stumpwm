@@ -31,7 +31,7 @@
 	  set-module-dir
           find-module))
 
-(defvar *module-dir* (pathname-as-directory (concat (getenv "HOME") ".stumpwm.d/modules"))
+(defvar *module-dir* (pathname-as-directory (concat (getenv "HOME") "/.stumpwm.d/modules"))
   "The location of the contrib modules on your system.")
 
 (defmacro with-synced-asdf (&body body)
@@ -64,6 +64,7 @@
 (defcommand load-module (name) ((:module "Load Module: "))
   "Loads the contributed module with the given NAME."
   (let ((module (find-module name)))
-      (when module
-        (asdf:operate 'asdf:load-op module))))
+    (when module
+      (with-synced-asdf
+        (asdf:operate 'asdf:load-op module)))))
 ;; End of file
