@@ -1,7 +1,8 @@
 (defpackage stumpwm.app-menu
   (:use :cl :stumpwm)
   (:export #:set-app-list
-           #:*app-list*))
+           #:*app-list*
+           #:*launcher-bindings*))
 
 (in-package :stumpwm.app-menu)
 
@@ -47,6 +48,3 @@
                      "Select a program to run")))
     (if (null selection) (throw 'error "Abort."))
     (run-commands (second selection))))
-
-(define-key *launcher-bindings* (kbd "M-m") "launcher-menu")
-(define-key *root-map* (kbd "C-r") *launcher-bindings*)
