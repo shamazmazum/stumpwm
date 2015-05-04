@@ -5,7 +5,7 @@
 
 (defpackage stumpwm.preferences
   (:use :cl :stumpwm)
-  (:export #:preferences-file
+  (:export #:*preferences-file*
            #:get-preference
            #:set-preference))
 
@@ -24,12 +24,14 @@
 
 (defun save-preferences ()
   (handler-case
-      (with-open-file (out *preferences-file*
-                           :direction :output
-                           :if-exists :supersede
-                           :if-does-not-exist :create)
-        (write *preferences* :stream out)
-        (terpri out))
+      (progn
+        (ensure-directories-exist *preferences-file*)
+        (with-open-file (out *preferences-file*
+                             :direction :output
+                             :if-exists :supersede
+                             :if-does-not-exist :create)
+          (write *preferences* :stream out)
+          (terpri out)))
     (file-error ()
       (when *preferences-timer*
           (cancel-timer *preferences-timer*)
