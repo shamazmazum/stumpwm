@@ -15,6 +15,7 @@
 
 (defvar *float-window-border* 1)
 (defvar *float-window-title-height* 10)
+(defvar *dragging-transparency* 0.2)
 
 ;; some book keeping functions
 (defmethod (setf window-x) :before (val (window float-window))
@@ -264,14 +265,15 @@
                        (:exposure t)
                        (t nil))))
             (xlib:grab-pointer (screen-root screen) '(:button-release :pointer-motion))
-            (unwind-protect
-                 ;; Wait until the mouse button is released
-                 (loop for ev = (xlib:process-event *display*
-                                                    :handler #'move-window-event-handler
-                                                    :timeout nil
-                                                    :discard-p t)
-                       until (eq ev :done))
-              (ungrab-pointer))
+            (with-window-transparency (*dragging-transparency* window)
+              (unwind-protect
+                   ;; Wait until the mouse button is released
+                   (loop for ev = (xlib:process-event *display*
+                                                      :handler #'move-window-event-handler
+                                                      :timeout nil
+                                                      :discard-p t)
+                         until (eq ev :done))
+                (ungrab-pointer)))
             (update-configuration window)
             ;; don't forget to update the cache
             (setf (window-x window) (xlib:drawable-x (window-parent window))

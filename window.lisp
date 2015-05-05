@@ -32,6 +32,7 @@
           set-transient-gravity
           set-window-geometry
           window-transparency
+          with-window-transparency
           window-shadow))
 
 (export
@@ -75,7 +76,7 @@
    (marked  :initform nil     :accessor window-marked)
    (plist   :initarg :plist   :accessor window-plist)
    (fullscreen :initform nil  :accessor window-fullscreen)
-   (transparency :initform 1.0 :accessor window-transparency
+   (transparency :initform 1 :accessor window-transparency
                  :documentation "Window transparency from 0 to 1")))
 
 (defmethod print-object ((object window) stream)
@@ -796,6 +797,19 @@ and bottom_end_x."
         (if (not (window-fullscreen window))
             (set-transparency-property clipped-value window))))
   (window-transparency window))
+
+(defmacro with-window-transparency ((value window) &body body)
+  "Set transparency of the WINDOW to specified VALUE within body of this macro"
+  (let ((val (gensym))
+        (win (gensym)))
+    `(let ((,val ,value)
+           (,win ,window))
+       (if (not (window-modal-p ,win))
+           (unwind-protect
+                (progn
+                  (set-transparency-property ,val ,win)
+                  ,@body)
+             (set-transparency-property (window-transparency ,win) ,win))))))
 
 (defun window-shadow (window)
   "Return the window shadow"
