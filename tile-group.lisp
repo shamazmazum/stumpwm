@@ -125,12 +125,6 @@
         (focus-frame group frame)
         (update-all-mode-lines)))))
 
-(defmethod group-button-press ((group tile-group) x y (where window))
-  (declare (ignore x y))
-  (when (eq *mouse-focus-policy* :click)
-    (focus-all where)
-    (update-all-mode-lines)))
-
 (defmethod group-root-exposure ((group tile-group))
   (show-frame-outline group nil))
 

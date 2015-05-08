@@ -541,6 +541,38 @@ exist, in which case they go into the current group.")
    (last-msg :initform nil :accessor screen-last-msg)
    (last-msg-highlights :initform nil :accessor screen-last-msg-highlights)))
 
+(defclass group ()
+  ((screen :initarg :screen :accessor group-screen)
+   (windows :initform nil :accessor group-windows)
+   (number :initarg :number :accessor group-number)
+   (name :initarg :name :accessor group-name)))
+
+(defclass window ()
+  ((xwin    :initarg :xwin    :accessor window-xwin)
+   (width   :initarg :width   :accessor window-width)
+   (height  :initarg :height  :accessor window-height)
+   ;; these are only used to hold the requested map location.
+   (x       :initarg :x       :accessor window-x)
+   (y       :initarg :y       :accessor window-y)
+   (gravity :initform nil     :accessor window-gravity)
+   (group   :initarg :group   :accessor window-group)
+   (number  :initarg :number  :accessor window-number)
+   (parent                    :accessor window-parent)
+   (title   :initarg :title   :accessor window-title)
+   (user-title :initform nil  :accessor window-user-title)
+   (class   :initarg :class   :accessor window-class)
+   (type    :initarg :type    :accessor window-type)
+   (res     :initarg :res     :accessor window-res)
+   (role    :initarg :role    :accessor window-role)
+   (unmap-ignores :initarg :unmap-ignores :accessor window-unmap-ignores)
+   (state   :initarg :state   :accessor window-state)
+   (normal-hints :initarg :normal-hints :accessor window-normal-hints)
+   (marked  :initform nil     :accessor window-marked)
+   (plist   :initarg :plist   :accessor window-plist)
+   (fullscreen :initform nil  :accessor window-fullscreen)
+   (transparency :initform 1 :accessor window-transparency
+                 :documentation "Window transparency from 0 to 1")))
+
 (defstruct ccontext
   screen
   win

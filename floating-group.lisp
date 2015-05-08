@@ -202,18 +202,15 @@
   (declare (ignore oh nh)))
 
 (defmethod group-sync-all-heads ((group float-group))
-  )
+  (declare (ignore group)))
 
 (defmethod group-sync-head ((group float-group) head)
-  (declare (ignore head))
-  )
+  (declare (ignore head)))
 
 (defmethod group-button-press ((group float-group) x y (window float-window))
   (let ((screen (group-screen group))
         (initial-width (xlib:drawable-width (window-parent window)))
         (initial-height (xlib:drawable-height (window-parent window))))
-    (when (eq *mouse-focus-policy* :click)
-      (focus-window window))
 
     ;; When in border
     (multiple-value-bind (relx rely same-screen-p child state-mask)

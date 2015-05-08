@@ -39,12 +39,6 @@
 (defvar *default-group-type* 'tile-group
   "The type of group that should be created by default.")
 
-(defclass group ()
-  ((screen :initarg :screen :accessor group-screen)
-   (windows :initform nil :accessor group-windows)
-   (number :initarg :number :accessor group-number)
-   (name :initarg :name :accessor group-name)))
-
 ;;; The group API
 (defgeneric group-startup (group)
   (:documentation "Called on all groups while stumpwm is starting up."))
@@ -100,6 +94,15 @@ needs to redraw anything on it, this is where it should do it."))
 (defgeneric group-sync-head (group head)
   (:documentation "When a head or its usable area is resized, this is
 called. When the modeline size changes, this is called."))
+
+(defmethod group-button-press :before ((group group) x y (where window))
+  (declare (ignore x y))
+  (when (eq *mouse-focus-policy* :click)
+    (focus-all where)
+    (update-all-mode-lines)))
+
+(defmethod group-button-press ((group group) x y (window window))
+  (declare (ignore group x y window)))
 
 (defun current-group (&optional (screen (current-screen)))
   "Return the current group for the current screen, unless
