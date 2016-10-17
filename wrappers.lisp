@@ -182,7 +182,7 @@
 
 (defun print-backtrace (&optional (frames 100))
   "print a backtrace of FRAMES number of frames to standard-output"
-  #+sbcl (sb-debug:backtrace frames *standard-output*)
+  #+sbcl (sb-debug:print-backtrace :count frames :stream *standard-output*)
   #+clisp (ext:show-stack 1 frames (sys::the-frame))
   #+ccl (ccl:print-call-history :count frames :stream *standard-output* :detailed-p nil)
   ;; borrowed from 'trivial-backtrace'
@@ -260,15 +260,6 @@ they should be windows. So use this function to make a window out of them."
   #+(or sbcl ecl openmcl lispworks) (xlib::make-window :id (slot-value xobject 'xlib::id) :display *display*)
   #-(or sbcl clisp ecl openmcl lispworks)
   (error 'not-implemented))
-
-;; Right now clisp and sbcl both work the same way
-(defun lookup-error-recoverable-p ()
-  #+(or clisp sbcl) (find :one (compute-restarts) :key 'restart-name)
-  #-(or clisp sbcl) nil)
-
-(defun recover-from-lookup-error ()
-  #+(or clisp sbcl) (invoke-restart :one)
-  #-(or clisp sbcl) (error 'not-implemented))
 
 (defun directory-no-deref (pathspec)
   "Call directory without dereferencing symlinks in the results"

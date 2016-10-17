@@ -55,7 +55,7 @@ like xterm and emacs.")
 
 ;;;;
 
-(defun really-raise-window (window)
+(defmethod really-raise-window ((window tile-window))
   (frame-raise-window (window-group window) (window-frame window) window))
 
 (defun raise-modals-of (window)
@@ -319,6 +319,16 @@ current frame and raise it."
   (let ((group (current-group)))
     (pull-other-hidden-window group)))
 
+(defcommand (pull-from-windowlist tile-group) () ()
+  "Pulls a window selected from the list of windows.
+This allows a behavior similar to Emacs' switch-to-buffer
+when selecting another window."
+  (let ((pulled-window (select-window-from-menu
+                        (group-windows (current-group))
+                        *window-format*)))
+    (when pulled-window
+      (pull-window pulled-window))))
+
 (defun exchange-windows (win1 win2)
   "Exchange the windows in their respective frames."
   (let ((f1 (window-frame win1))
@@ -405,7 +415,7 @@ frame. Possible values are:
                                   ((:y-or-n "Lock to group? ")
                                    (:y-or-n "Use title? "))
   "Make a generic placement rule for the current window. Might be too specific/not specific enough!"
-  (make-rule-for-window (current-window) (first lock) (first title)))
+  (make-rule-for-window (current-window) lock title))
 
 (defcommand (forget tile-group) () ()
   "Forget the window placement rule that matches the current window."

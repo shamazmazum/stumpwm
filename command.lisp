@@ -47,14 +47,12 @@
 (defvar *max-command-alias-depth* 10
   "")
 
-;; XXX: I'd like to just use straight warn, but sbcl drops to the
-;; debugger when compiling so i've made a style warning instead
-;; -sabetts
 (define-condition command-docstring-warning (style-warning)
+  ;; Don't define an accessor to prevent collision with the generic command
   ((command :initarg :command))
   (:report
-   (lambda (c s)
-     (format s "command ~a doesn't have a docstring" (slot-value c 'command)))))
+   (lambda (condition stream)
+     (format stream "The command ~A doesn't have a docstring" (slot-value condition 'command)))))
 
 (defun parse-float (string)
   "Extract a float number from a string"
@@ -151,9 +149,12 @@ out, an element can just be the argument type."
      (defun ,name ,args
        ,docstring
        (let ((%interactivep% *interactivep*)
-	     (*interactivep* nil))
-	 (declare (ignorable %interactivep%))
-	 ,@body))
+             (*interactivep* nil))
+         (declare (ignorable %interactivep%))
+         (run-hook-with-args *pre-command-hook* ',name)
+         (multiple-value-prog1
+             (progn ,@body)
+           (run-hook-with-args *post-command-hook* ',name))))
      (export ',name)
      (setf (gethash ',name *command-hash*)
            (make-command :name ',name
@@ -313,8 +314,7 @@ then describes the symbol."
 (define-stumpwm-type :y-or-n (input prompt)
   (let ((s (or (argument-pop input)
                (read-one-line (current-screen) (concat prompt "(y/n): ")))))
-    (when s
-      (values (list (equal s "y"))))))
+    (equal s "y")))
 
 (defun lookup-symbol (string)
   ;; FIXME: should we really use string-upcase?

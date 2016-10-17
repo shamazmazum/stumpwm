@@ -24,6 +24,7 @@
 
 (export '(cancel-timer
 	  run-with-timer
+          *toplevel-io*
 	  stumpwm
 	  timer-p))
 
@@ -77,6 +78,9 @@ further up. "
 
 ;;; Timers
 
+(defvar *toplevel-io* nil
+  "Top-level I/O loop")
+
 (defvar *timer-list* nil
   "List of active timers.")
 
@@ -108,21 +112,35 @@ The action is to call FUNCTION with arguments ARGS."
   (setf (timer-time timer) (+ (get-internal-real-time)
                               (* when internal-time-units-per-second))))
 
-(defun run-expired-timers ()
+(defun sort-timers (timers)
   (let ((now (get-internal-real-time))
-	(timers *timer-list*)
-	(pending '())
-	(remaining '()))
-    (setf *timer-list*
-	  (dolist (timer timers (sort remaining #'< :key #'timer-time))
-	    (if (<= (timer-time timer) now)
-		(progn (push timer pending)
-		       (when (timer-repeat timer)
-			 (schedule-timer timer (timer-repeat timer))
-			 (push timer remaining)))
-		(push timer remaining))))
-    (dolist (timer pending)
-      (apply (timer-function timer) (timer-args timer)))))
+        (pending ())
+        (remaining ()))
+    (dolist (timer timers)
+      (if (<= (timer-time timer) now)
+          (progn (push timer pending)
+                 (when (timer-repeat timer)
+                   (schedule-timer timer (timer-repeat timer))
+                   (push timer remaining)))
+          (push timer remaining)))
+    (values pending remaining)))
+
+(defun update-timer-list (timers)
+  "Update the timer list, sorting the timers by which is closer expiry."
+  (setf *timer-list*
+        (sort timers #'< :key #'timer-time)))
+
+(defun execute-timers (timers)
+  (map nil #'execute-timer timers))
+
+(defun execute-timer (timer)
+  (apply (timer-function timer) (timer-args timer)))
+
+(defun run-expired-timers ()
+  (multiple-value-bind (pending remaining)
+      (sort-timers *timer-list*)
+    (update-timer-list remaining)
+    (execute-timers pending)))
 
 (defun get-next-timeout (timers)
   "Return the number of seconds until the next timeout or nil if there are no timers."
@@ -131,7 +149,22 @@ The action is to call FUNCTION with arguments ARGS."
             internal-time-units-per-second)
          0)))
 
-(defun perform-top-level-error-action (c)
+(defgeneric handle-top-level-condition (c))
+
+(defmethod handle-top-level-condition (c)
+  ;; Do nothing by default; there's nothing wrong with signalling
+  ;; arbitrary conditions
+  )
+
+(defmethod handle-top-level-condition ((c warning))
+  (muffle-warning))
+
+(defmethod handle-top-level-condition ((c serious-condition))
+  (when (and (find-restart :remove-channel)
+             (not (typep *current-io-channel*
+                         '(or stumpwm-timer-channel display-channel))))
+    (message "Removed channel ~S due to uncaught error '~A'." *current-io-channel* c)
+    (invoke-restart :remove-channel))
   (ecase *top-level-error-action*
     (:message
      (let ((s (format nil "~&Caught '~a' at the top level. Please report this." c)))
@@ -142,44 +175,56 @@ The action is to call FUNCTION with arguments ARGS."
     (:abort
      (throw :top-level (list c (backtrace-string))))))
 
+(defclass stumpwm-timer-channel () ())
+
+(defmethod io-channel-ioport (io-loop (channel stumpwm-timer-channel))
+  (declare (ignore io-loop))
+  nil)
+(defmethod io-channel-events ((channel stumpwm-timer-channel))
+  (if *timer-list*
+      `((:timeout ,(timer-time (car *timer-list*))))
+      '(:loop)))
+(defmethod io-channel-handle ((channel stumpwm-timer-channel) (event (eql :timeout)) &key)
+  (run-expired-timers))
+(defmethod io-channel-handle ((channel stumpwm-timer-channel) (event (eql :loop)) &key)
+  (run-expired-timers))
+
+(defclass display-channel ()
+  ((display :initarg :display)))
+
+(defmethod io-channel-ioport (io-loop (channel display-channel))
+  (io-channel-ioport io-loop (slot-value channel 'display)))
+(defmethod io-channel-events ((channel display-channel))
+  (list :read :loop))
+(flet ((dispatch-all (display)
+         (block handle
+           (loop
+              (xlib:display-finish-output display)
+              (let ((nevents (xlib:event-listen display 0)))
+                (unless nevents (return-from handle))
+                (xlib:with-event-queue (display)
+                  (run-hook *event-processing-hook*)
+                  ;; Note: process-event appears to hang for an unknown
+                  ;; reason. This is why it is passed a timeout in hopes that
+                  ;; this will keep it from hanging.
+                  (xlib:process-event display :handler #'handle-event :timeout 0)))))))
+  (defmethod io-channel-handle ((channel display-channel) (event (eql :read)) &key)
+    (dispatch-all (slot-value channel 'display)))
+  (defmethod io-channel-handle ((channel display-channel) (event (eql :loop)) &key)
+    (dispatch-all (slot-value channel 'display))))
+
 (defun stumpwm-internal-loop ()
-  "The internal loop that waits for events and handles them."
   (loop
-     (run-hook *internal-loop-hook*)
-     (handler-bind
-         ((xlib:lookup-error (lambda (c)
-                               (if (lookup-error-recoverable-p)
-                                   (recover-from-lookup-error)
-                                   (error c))))
-          (warning #'muffle-warning)
-          ((or serious-condition error)
-           (lambda (c)
-             (run-hook *top-level-error-hook*)
-             (perform-top-level-error-action c)))
-          (t
-           (lambda (c)
-             ;; some other wacko condition was raised so first try
-             ;; what we can to keep going.
-             (cond ((find-restart 'muffle-warning)
-                    (muffle-warning))
-                   ((find-restart 'continue)
-                    (continue)))
-             ;; and if that fails treat it like a top level error.
-             (perform-top-level-error-action c))))
-       ;; Note: process-event appears to hang for an unknown
-       ;; reason. This is why it is passed a timeout in hopes that
-       ;; this will keep it from hanging.
-       (xlib:display-finish-output *display*)
-       (let* ((to (get-next-timeout *timer-list*))
-              (timeout (and to (ceiling to)))
-              (nevents (xlib:event-listen *display* timeout)))
-         (dformat 10 "timeout: ~a~%" timeout)
-         (when timeout
-           (run-expired-timers))
-         (xlib:with-event-queue (*display*)
-           (when nevents
-             (run-hook *event-processing-hook*)
-             (xlib:process-event *display* :handler #'handle-event :timeout 0)))))))
+     (with-simple-restart (:new-io-loop "Recreate I/O loop")
+       (let ((io (make-instance *default-io-loop*)))
+         (io-loop-add io (make-instance 'stumpwm-timer-channel))
+         (io-loop-add io (make-instance 'display-channel :display *display*))
+         (setf *toplevel-io* io)
+         (loop
+            (handler-bind
+                ((t (lambda (c)
+                      (handle-top-level-condition c))))
+              (io-loop io :description "StumpWM")))))))
 
 (defun parse-display-string (display)
   "Parse an X11 DISPLAY string and return the host and display from it."
@@ -265,8 +310,10 @@ The action is to call FUNCTION with arguments ARGS."
              ;; we need to jump out of the event loop in order to hup
              ;; the process because otherwise we get errors.
              ((eq ret :hup-process)
+              (run-hook *restart-hook*)
               (apply 'execv (first (argv)) (argv)))
-             ((eq ret :restart))
+             ((eq ret :restart)
+              (run-hook *restart-hook*))
              (t
               (run-hook *quit-hook*)
               ;; the number is the unix return code

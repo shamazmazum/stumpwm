@@ -30,8 +30,6 @@
           abort-iresize
           exit-iresize))
 
-(defvar *resize-backup* nil)
-
 (defvar *resize-increment* 10
   "Number of pixels to increment by when interactively resizing frames.")
 
@@ -92,9 +90,7 @@ resizing the current frame is loaded. Hit @key{C-g}, @key{RET}, or
           (message "Resize Frame")
           (update-resize-map fx fy fh fw dh dw)
           (push-top-map *resize-map*)
-           (draw-frame-outlines group (current-head)))
-        ;;   (setf *resize-backup* (copy-frame-tree (current-group)))
-        )))
+          (draw-frame-outlines (current-group) (current-head))))))
 
 (defun resize-unhide ()
   (clear-frame-outlines (current-group))
