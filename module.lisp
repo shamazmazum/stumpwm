@@ -27,9 +27,21 @@
 
 (export '(load-module
           list-modules
-          *module-dir*
 	  set-module-dir
-          find-module))
+          find-module
+          register-module))
+
+(defstruct module
+  name init-fn stop-fn)
+
+(defvar *initialize-modules* nil
+  "Initialize modules on load")
+
+(defvar *loaded-modules-list* nil
+  "List of loaded but not initialized modules")
+
+(defvar *initialized-modules-list* nil
+  "List of initialized modules")
 
 (defvar *module-dir* (pathname-as-directory (concat (getenv "HOME") "/.stumpwm.d/modules"))
   "The location of the contrib modules on your system.")
@@ -55,7 +67,37 @@
 
 (defun find-module (name)
   "Find a module with the given name"
-  (if (find name (list-modules) :test #'string=) name))
+  (find name (list-modules) :test #'string=) name)
+
+
+(defun register-module (name &key init-fn stop-fn)
+  "Register module. Should be called inside a module.
+You can set initializer and finalizer for a module using this function"
+  (push (make-module
+         :name name
+         :init-fn init-fn
+         :stop-fn stop-fn)
+        *loaded-modules-list*))
+
+(defun initialize-modules (&optional starting)
+  "Maybe initialize loaded modules. You can set STARTING to T if you really want
+modules to be initialized"
+  (if starting (setq *initialize-modules* t))
+  (when *initialize-modules*
+    (flet ((initialize-module (module)
+             (let ((init-fn (module-init-fn module)))
+               (if init-fn (funcall init-fn)))))
+      (setq *initialized-modules-list*
+            (mapc #'initialize-module (reverse *loaded-modules-list*))
+            *loaded-modules-list* nil))))
+
+(defun stop-modules ()
+  "Finalize all modules before exit"
+  (flet ((stop-module (module)
+           (let ((stop-fn (module-stop-fn module)))
+             (if stop-fn (funcall stop-fn)))))
+    (mapc #'stop-module *initialized-modules-list*)
+    (setq *initialized-modules-list* nil)))
 
 (define-stumpwm-type :module (input prompt)
   (or (argument-pop-rest input)
@@ -66,5 +108,6 @@
   (let ((module (find-module name)))
     (when module
       (with-synced-asdf
-        (asdf:operate 'asdf:load-op module)))))
+        (asdf:operate 'asdf:load-op module))
+      (initialize-modules))))
 ;; End of file

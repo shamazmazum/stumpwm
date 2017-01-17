@@ -298,6 +298,7 @@ The action is to call FUNCTION with arguments ARGS."
   (setf *data-dir*
         (make-pathname :directory (append (pathname-directory (user-homedir-pathname))
                                           (list ".stumpwm.d"))))
+  (initialize-modules t)
   (loop
      (let ((ret (catch :top-level
                   (stumpwm-internal display-str))))
@@ -316,6 +317,7 @@ The action is to call FUNCTION with arguments ARGS."
               (run-hook *restart-hook*))
              (t
               (run-hook *quit-hook*)
+              (stop-modules)
               ;; the number is the unix return code
               #+(or cmu clisp abcl) (ext:quit 0)
               (return-from stumpwm 0))))))

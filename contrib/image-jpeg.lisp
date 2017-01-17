@@ -24,5 +24,8 @@
             (incf k 3)))
         (xlib:create-image :width width :height height :depth 24 :data array)))))
 
-(pushnew (cons "jpg" #'read-jpeg) *image-loaders*)
-(pushnew (cons "jpeg" #'read-jpeg) *image-loaders*)
+(register-module "STUMPWM.CONTRIB.IMAGE-JPEG"
+                 :init-fn
+                 (lambda ()
+                   (pushnew (cons "jpg" #'read-jpeg) *image-loaders*)
+                   (pushnew (cons "jpeg" #'read-jpeg) *image-loaders*)))

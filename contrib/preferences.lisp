@@ -20,8 +20,6 @@
 
 (defvar *preferences-timer* nil)
 
-(defvar *initialized* nil)
-
 (defun save-preferences ()
   (handler-case
       (progn
@@ -37,15 +35,6 @@
           (cancel-timer *preferences-timer*)
           (setq *preferences-timer* nil))
       (message "Cannot write preferences. Make sure if needed directories exist"))))
-
-(flet ((load-preferences ()
-         (handler-case
-             (with-open-file (in *preferences-file*)
-               (setq *preferences* (read in)))
-           (file-error () (message "Cannot read preferences")))
-         (if (null *preferences-timer*)
-             (setq *preferences-timer* (run-with-timer 2 30 #'save-preferences)))))
-  (load-preferences))
 
 (defun get-preference (key &key (test #'eql))
   "Return a preference value and t if it is set or nil nil otherwise"
@@ -70,6 +59,20 @@
                  :test test
                  :key #'car)))))
 
-(when (not *initialized*)
-  (add-hook *quit-hook* #'save-preferences)
-  (setq *initialized* t))
+(defun init-preferences ()
+  (handler-case
+      (with-open-file (in *preferences-file*)
+        (setq *preferences* (read in)))
+    (file-error () (message "Cannot read preferences")))
+  (if (null *preferences-timer*)
+      (setq *preferences-timer* (run-with-timer 2 30 #'save-preferences))))
+
+(defun stop-preferences ()
+  (save-preferences)
+  (when *preferences-timer*
+    (cancel-timer *preferences-timer*)
+    (setq *preferences-timer* nil)))
+
+(register-module "STUMPWM.PREFERENCES"
+                 :init-fn #'init-preferences
+                 :stop-fn #'stop-preferences)

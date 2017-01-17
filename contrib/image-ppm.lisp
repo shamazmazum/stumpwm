@@ -63,4 +63,8 @@
                               (parse-integer (funcall reader)))))))
       (xlib:create-image :width width :height height :depth 24 :data array))))
 
-(pushnew (cons "ppm" (lambda (name) (with-open-file (in name) (read-ppm in)))) *image-loaders*)
+(register-module "STUMPWM.CONTRIB.IMAGE-PPM"
+                 :init-fn
+                 (lambda ()
+                   (pushnew (cons "ppm" (lambda (name) (with-open-file (in name) (read-ppm in))))
+                            *image-loaders*)))

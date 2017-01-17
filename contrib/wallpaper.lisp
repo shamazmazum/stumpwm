@@ -28,10 +28,12 @@
      (second selection)
      :test #'equal)))
 
-(flet ((restore-wallpapers ()
-         (dolist (screen *screen-list*)
-           (let ((wallpaper (stumpwm.preferences:get-preference
-                             (cons :wallpaper (stumpwm::screen-id screen))
-                             :test #'equal)))
-             (if wallpaper (load-wallpaper screen wallpaper))))))
-  (restore-wallpapers))
+(defun restore-wallpapers ()
+  (dolist (screen *screen-list*)
+    (let ((wallpaper (stumpwm.preferences:get-preference
+                      (cons :wallpaper (stumpwm::screen-id screen))
+                      :test #'equal)))
+      (if wallpaper (load-wallpaper screen wallpaper)))))
+
+(register-module "STUMPWM.WALLPAPER"
+                 :init-fn #'restore-wallpapers)
