@@ -30,6 +30,13 @@
 (define-condition not-implemented (stumpwm-error)
   () (:documentation "A function has been called that is not implemented yet."))
 
+(defun screen-display-string (screen &optional (assign t))
+  (format nil
+          (if assign "DISPLAY=~a:~d.~d" "~a:~d.~d")
+          (screen-host screen)
+          (xlib:display-display *display*)
+          (screen-id screen)))
+
 (defun run-prog (prog &rest opts &key args output (wait t) &allow-other-keys)
   "Common interface to shell. Does not return anything useful."
   #+(or clisp ccl ecl gcl)
@@ -37,7 +44,9 @@
     ;; variable so it's inherited by the child process.
     (when (current-screen)
       (setf (getenv "DISPLAY") (screen-display-string (current-screen) nil)))
-  (setq opts (remove-plist opts :args :output :wait))
+  (remf opts :args)
+  (remf opts :output)
+  (remf opts :wait)
   #+allegro
   (apply #'excl:run-shell-command (apply #'vector prog prog args)
          :output output :wait wait :environment
@@ -373,5 +382,62 @@ regarding files in sysfs. Data is read in chunks of BLOCKSIZE bytes."
            (coerce arguments 'array))
   #-(or sbcl clisp)
   (error "Unimplemented"))
+
+(defun open-pipe (&key (element-type '(unsigned-byte 8)))
+  "Create a pipe and return two streams. The first value is the input
+stream, and the second value is the output stream."
+  #+sbcl
+  (multiple-value-bind (in-fd out-fd)
+      (sb-posix:pipe)
+    (let ((in-stream (sb-sys:make-fd-stream in-fd :input t :element-type element-type))
+          (out-stream (sb-sys:make-fd-stream out-fd :output t :element-type element-type)))
+      (values in-stream out-stream)))
+  #+ccl
+  (multiple-value-bind (in-fd out-fd)
+      (ccl::pipe)
+    (let ((in-stream (ccl::make-fd-stream in-fd :direction :input :element-type element-type))
+          (out-stream (ccl::make-fd-stream out-fd :direction :output :element-type element-type)))
+      (values in-stream out-stream)))
+  #-(or sbcl ccl)
+  (error "Unsupported CL implementation"))
+
+(defun make-lock ()
+  #+sbcl
+  (sb-thread:make-mutex)
+  #+ccl
+  (ccl:make-lock "Anonymous lock")
+  #+(and clisp mt)
+  (mt:make-mutex)
+  #+lispworks
+  (mp:make-lock)
+  #+ecl
+  (mp:make-lock)
+  #+allegro
+  (mp:make-process-lock)
+  #-(or sbcl ccl (and clisp mt) lispworks ecl allegro)
+  nil)
+
+(defmacro with-lock-held ((lock) &body body)
+  #+sbcl
+  `(sb-thread:with-mutex (,lock)
+     ,@body)
+  #+ccl
+  `(ccl:with-lock-grabbed (,lock)
+     ,@body)
+  #+(and clisp mt)
+  `(mt:with-mutex-lock (,lock)
+     ,@body)
+  #+lispworks
+  `(mp:with-lock (,lock)
+     ,@body)
+  #+ecl
+  `(mp:with-lock (,lock)
+     ,@body)
+  #+allegro
+  `(mp:with-process-lock (,lock :norecursive t)
+     ,@body)
+  #-(or sbcl ccl (and clisp mt) lispworks ecl allegro)
+  `(progn
+     ,@body))
 
 ;;; EOF

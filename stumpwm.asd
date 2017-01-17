@@ -53,9 +53,10 @@
                (:file "iresize")
                (:file "help")
                (:file "fdump")
-	       (:file "time")
-	       (:file "mode-line")
-	       (:file "color")
+               (:file "time")
+               (:file "mode-line")
+               (:file "mode-line-formatters")
+               (:file "color")
                (:file "wse")
                (:file "wallpaper")
 	       ;; keep this last so it always gets recompiled if

@@ -118,10 +118,6 @@ _NET_WM_STATE_DEMANDS_ATTENTION set"
                        (logtest 256 flags)))
         (find-wm-state (window-xwin window) :_NET_WM_STATE_DEMANDS_ATTENTION))))
 
-(defun only-urgent (windows)
-  "Return a list of all urgent windows on SCREEN"
-  (remove-if-not 'window-urgent-p (copy-list windows)))
-
 (defcommand next-urgent () ()
             "Jump to the next urgent window"
             (and (screen-urgent-windows (current-screen))
@@ -670,10 +666,17 @@ and bottom_end_x."
              (let ((key (copy-structure key)))
                (setf (key-shift key) t)
                key))
+           (key-modifiers-exist-p (key)
+             (and
+              (or (not (key-meta key)) (modifiers-meta *modifiers*))
+              (or (not (key-alt key)) (modifiers-alt *modifiers*))
+              (or (not (key-hyper key)) (modifiers-hyper *modifiers*))
+              (or (not (key-super key)) (modifiers-super *modifiers*))))
            (grabit (w key)
-             (loop for code in (multiple-value-list (xlib:keysym->keycodes *display* (key-keysym key))) do
+             (loop for code in (multiple-value-list (xlib:keysym->keycodes *display* (key-keysym key)))
                ;; some keysyms aren't mapped to keycodes so just ignore them.
-               (when code
+                when (and code (key-modifiers-exist-p key))
+                  do
                  ;; Some keysyms, such as upper case letters, need the
                  ;; shift modifier to be set in order to grab properly.
                  (let ((key
@@ -693,7 +696,7 @@ and bottom_end_x."
                                     :modifiers (x11-mods key t nil) :owner-p t
                                     :sync-pointer-p nil :sync-keyboard-p nil)
                      (xlib:grab-key w code :modifiers (x11-mods key t t) :owner-p t
-                                    :sync-keyboard-p nil :sync-keyboard-p nil)))))))
+                                    :sync-keyboard-p nil :sync-keyboard-p nil))))))
     (dolist (map (dereference-kmaps (top-maps group)))
       (dolist (i (kmap-bindings map))
         (grabit win (binding-key i))))))
@@ -927,18 +930,24 @@ needed."
       ((eq window cw)
        ;; If window to focus is already focused then our work is done.
        )
-      ((and *current-event-time* 
-            (member :WM_TAKE_FOCUS (xlib:wm-protocols xwin) :test #'eq))
+      ;; If a WM_TAKE_FOCUS client message is not sent to the window,
+      ;; widgets in Java applications tend to lose focus when the
+      ;; window gets focused. This is hopefully the right way to
+      ;; handle this.
+      ((member :WM_TAKE_FOCUS (xlib:wm-protocols xwin) :test #'eq)
        (let ((hints (xlib:wm-hints xwin)))
          (when (or (null hints) (eq (xlib:wm-hints-input hints) :on))
-           (screen-set-focus screen window)
-           (update-decoration window)
-           (when cw
-             (update-decoration cw))))
+           (screen-set-focus screen window)))
+       (update-decoration window)
+       (when cw
+         (update-decoration cw))
        (move-window-to-head group window)
        (send-client-message window :WM_PROTOCOLS
                             (xlib:intern-atom *display* :WM_TAKE_FOCUS)
-                            *current-event-time*)
+                            ;; From reading the ICCCM spec, it's not
+                            ;; entirely clear that this is the correct
+                            ;; value for time that we send here.
+                            (or *current-event-time* 0))
        (run-hook-with-args *focus-window-hook* window cw))
       (t
        (screen-set-focus screen window)

@@ -84,6 +84,12 @@ further up. "
 (defvar *timer-list* nil
   "List of active timers.")
 
+(defvar *timer-list-lock* (make-lock)
+  "Lock that should be held whenever *TIMER-LIST* is modified.")
+
+(defvar *in-main-thread* nil
+  "Dynamically bound to T during the execution of the main stumpwm function.")
+
 (defstruct timer
   time repeat function args)
 
@@ -100,13 +106,21 @@ The action is to call FUNCTION with arguments ARGS."
                 :function function
                 :args args)))
     (schedule-timer timer secs)
-    (setf *timer-list* (merge 'list *timer-list* (list timer) #'< :key #'timer-time))
-    timer))
+    (labels ((append-to-list ()
+               (with-lock-held (*timer-list-lock*)
+                 (setf *timer-list* (merge 'list *timer-list* (list timer) #'< :key #'timer-time)))))
+      ;; If CALL-IN-MAIN-THREAD is supported, the timer should be scheduled in the main thread.
+      #+call-in-main-thread
+      (call-in-main-thread #'append-to-list)
+      #-call-in-main-thread
+      (append-to-list)
+      timer)))
 
 (defun cancel-timer (timer)
   "Remove TIMER from the list of active timers."
   (check-type timer timer)
-  (setf *timer-list* (remove timer *timer-list*)))
+  (with-lock-held (*timer-list-lock*)
+    (setf *timer-list* (remove timer *timer-list*))))
 
 (defun schedule-timer (timer when)
   (setf (timer-time timer) (+ (get-internal-real-time)
@@ -137,10 +151,13 @@ The action is to call FUNCTION with arguments ARGS."
   (apply (timer-function timer) (timer-args timer)))
 
 (defun run-expired-timers ()
-  (multiple-value-bind (pending remaining)
-      (sort-timers *timer-list*)
-    (update-timer-list remaining)
-    (execute-timers pending)))
+  (let ((expired (with-lock-held (*timer-list-lock*)
+                   (multiple-value-bind (pending remaining)
+                       (sort-timers *timer-list*)
+                     (update-timer-list remaining)
+                     pending))))
+    ;; Call the timers after the lock has been released
+    (execute-timers expired)))
 
 (defun get-next-timeout (timers)
   "Return the number of seconds until the next timeout or nil if there are no timers."
@@ -162,7 +179,7 @@ The action is to call FUNCTION with arguments ARGS."
 (defmethod handle-top-level-condition ((c serious-condition))
   (when (and (find-restart :remove-channel)
              (not (typep *current-io-channel*
-                         '(or stumpwm-timer-channel display-channel))))
+                         '(or stumpwm-timer-channel display-channel request-channel))))
     (message "Removed channel ~S due to uncaught error '~A'." *current-io-channel* c)
     (invoke-restart :remove-channel))
   (ecase *top-level-error-action*
@@ -181,13 +198,73 @@ The action is to call FUNCTION with arguments ARGS."
   (declare (ignore io-loop))
   nil)
 (defmethod io-channel-events ((channel stumpwm-timer-channel))
-  (if *timer-list*
-      `((:timeout ,(timer-time (car *timer-list*))))
-      '(:loop)))
+  (with-lock-held (*timer-list-lock*)
+    (if *timer-list*
+        `((:timeout ,(timer-time (car *timer-list*))))
+        '(:loop))))
 (defmethod io-channel-handle ((channel stumpwm-timer-channel) (event (eql :timeout)) &key)
   (run-expired-timers))
 (defmethod io-channel-handle ((channel stumpwm-timer-channel) (event (eql :loop)) &key)
   (run-expired-timers))
+
+(defclass request-channel ()
+  ((in    :initarg :in
+          :reader request-channel-in)
+   (out   :initarg :out
+          :reader request-channel-out)
+   (queue :initform nil
+          :accessor request-channel-queue)
+   (lock  :initform (make-lock)
+          :reader request-channel-lock)))
+
+(defvar *request-channel* nil)
+
+(defmethod io-channel-ioport (io-loop (channel request-channel))
+  (io-channel-ioport io-loop (request-channel-in channel)))
+
+(defmethod io-channel-events ((channel request-channel))
+  (list :read))
+
+(defmethod io-channel-handle ((channel request-channel) (event (eql :read)) &key)
+  ;; At this point, we know that there is at least one request written
+  ;; on the pipe. We read all the data off the pipe and then evaluate
+  ;; all the waiting jobs.
+  (loop
+    with in = (request-channel-in channel)
+    do (read-byte in)
+    while (listen in))
+  (let ((events (with-lock-held ((request-channel-lock channel))
+                  (let ((queue-copy (request-channel-queue channel)))
+                    (setf (request-channel-queue channel) nil)
+                    queue-copy))))
+    (dolist (event (reverse events))
+      (funcall event))))
+
+#+ccl
+(defmethod io-channel-ioport (io-loop (channel ccl::fd-binary-input-stream))
+  (declare (ignore io-loop))
+  (ccl::stream-device channel :input))
+
+#+call-in-main-thread
+(defun call-in-main-thread (fn)
+  (cond (*in-main-thread*
+         (funcall fn))
+        (t
+         (with-lock-held ((request-channel-lock *request-channel*))
+           (push fn (request-channel-queue *request-channel*)))
+         (let ((out (request-channel-out *request-channel*)))
+           ;; For now, just write a single byte since all we want is for the
+           ;; main thread to process the queue. If we want to handle
+           ;; different types of events, we'll have to change this so that
+           ;; the message sent indicates the event type instead.
+           (write-byte 0 out)
+           (finish-output out)))))
+
+#-call-in-main-thread
+(defun call-in-main-thread (fn)
+  (if *in-main-thread*
+      (funcall fn)
+      (run-with-timer 0 nil fn)))
 
 (defclass display-channel ()
   ((display :initarg :display)))
@@ -219,6 +296,16 @@ The action is to call FUNCTION with arguments ARGS."
        (let ((io (make-instance *default-io-loop*)))
          (io-loop-add io (make-instance 'stumpwm-timer-channel))
          (io-loop-add io (make-instance 'display-channel :display *display*))
+
+         ;; If we have no implementation for the current CL, then
+         ;; don't register the channel.
+         #+call-in-main-thread
+         (multiple-value-bind (in out)
+             (open-pipe)
+           (let ((channel (make-instance 'request-channel :in in :out out)))
+             (io-loop-add io channel)
+             (setq *request-channel* channel)))
+
          (setf *toplevel-io* io)
          (loop
             (handler-bind
@@ -295,29 +382,30 @@ The action is to call FUNCTION with arguments ARGS."
 ;; Usage: (stumpwm)
 (defun stumpwm (&optional (display-str (or (getenv "DISPLAY") ":0")))
   "Start the stump window manager."
-  (setf *data-dir*
-        (make-pathname :directory (append (pathname-directory (user-homedir-pathname))
-                                          (list ".stumpwm.d"))))
-  (initialize-modules t)
-  (loop
-     (let ((ret (catch :top-level
-                  (stumpwm-internal display-str))))
-       (setf *last-unhandled-error* nil)
-       (cond ((and (consp ret)
-                   (typep (first ret) 'condition))
-              (format t "~&Caught '~a' at the top level. Please report this.~%~a" 
-                      (first ret) (second ret))
-              (setf *last-unhandled-error* ret))
-             ;; we need to jump out of the event loop in order to hup
-             ;; the process because otherwise we get errors.
-             ((eq ret :hup-process)
-              (run-hook *restart-hook*)
-              (apply 'execv (first (argv)) (argv)))
-             ((eq ret :restart)
-              (run-hook *restart-hook*))
-             (t
-              (run-hook *quit-hook*)
-              (stop-modules)
-              ;; the number is the unix return code
-              #+(or cmu clisp abcl) (ext:quit 0)
-              (return-from stumpwm 0))))))
+  (let ((*in-main-thread* t))
+    (setf *data-dir*
+          (make-pathname :directory (append (pathname-directory (user-homedir-pathname))
+                                            (list ".stumpwm.d"))))
+    (initialize-modules t)
+    (loop
+       (let ((ret (catch :top-level
+                    (stumpwm-internal display-str))))
+         (setf *last-unhandled-error* nil)
+         (cond ((and (consp ret)
+                     (typep (first ret) 'condition))
+                (format t "~&Caught '~a' at the top level. Please report this.~%~a" 
+                        (first ret) (second ret))
+                (setf *last-unhandled-error* ret))
+               ;; we need to jump out of the event loop in order to hup
+               ;; the process because otherwise we get errors.
+               ((eq ret :hup-process)
+                (run-hook *restart-hook*)
+                (apply 'execv (first (argv)) (argv)))
+               ((eq ret :restart)
+                (run-hook *restart-hook*))
+               (t
+                (run-hook *quit-hook*)
+                (stop-modules)
+                ;; the number is the unix return code
+                #+(or cmu clisp abcl) (ext:quit 0)
+                (return-from stumpwm 0)))))))
