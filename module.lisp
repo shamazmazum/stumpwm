@@ -73,11 +73,14 @@
 (defun register-module (name &key init-fn stop-fn)
   "Register module. Should be called inside a module.
 You can set initializer and finalizer for a module using this function"
-  (push (make-module
-         :name name
-         :init-fn init-fn
-         :stop-fn stop-fn)
-        *loaded-modules-list*))
+  (let ((module (or (find name *loaded-modules-list* :key #'module-name :test #'string=)
+                    (find name *initialized-modules-list* :key #'module-name :test #'string=))))
+    (when (not module)
+      (push (make-module
+             :name name
+             :init-fn init-fn
+             :stop-fn stop-fn)
+            *loaded-modules-list*))))
 
 (defun initialize-modules (&optional starting)
   "Maybe initialize loaded modules. You can set STARTING to T if you really want
