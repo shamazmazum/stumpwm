@@ -22,19 +22,20 @@
 
 (defun save-preferences ()
   (handler-case
-      (progn
+      (when (get '*preferences* :dirty)
         (ensure-directories-exist *preferences-file*)
         (with-open-file (out *preferences-file*
                              :direction :output
                              :if-exists :supersede
                              :if-does-not-exist :create)
           (write *preferences* :stream out)
-          (terpri out)))
+          (terpri out))
+        (setf (get '*preferences* :dirty) nil))
     (file-error ()
       (when *preferences-timer*
           (cancel-timer *preferences-timer*)
           (setq *preferences-timer* nil))
-      (message "Cannot write preferences. Make sure if needed directories exist"))))
+      (message "Cannot write preferences. Make sure if needed directories are accessible"))))
 
 (defun get-preference (key &key (test #'eql))
   "Return a preference value and t if it is set or nil nil otherwise"
@@ -52,12 +53,14 @@
                  (intern (symbol-name key)
                          (find-package :stumpwm.preferences))
                  key)))
-  (setq *preferences*
+  (setf *preferences*
         (cons
          (cons key preference)
          (remove key *preferences*
                  :test test
-                 :key #'car)))))
+                 :key #'car))
+        ;; Set dirty flag on preferences
+        (get '*preferences* :dirty) t)))
 
 (defun init-preferences ()
   (handler-case
