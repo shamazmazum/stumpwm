@@ -91,7 +91,8 @@ modules to be initialized"
              (let ((init-fn (module-init-fn module)))
                (if init-fn (funcall init-fn)))))
       (setq *initialized-modules-list*
-            (mapc #'initialize-module (reverse *loaded-modules-list*))
+            (nconc *initialized-modules-list*
+                   (mapc #'initialize-module (reverse *loaded-modules-list*)))
             *loaded-modules-list* nil))))
 
 (defun stop-modules ()
@@ -99,7 +100,7 @@ modules to be initialized"
   (flet ((stop-module (module)
            (let ((stop-fn (module-stop-fn module)))
              (if stop-fn (funcall stop-fn)))))
-    (mapc #'stop-module *initialized-modules-list*)
+    (mapc #'stop-module (reverse *initialized-modules-list*))
     (setq *initialized-modules-list* nil)))
 
 (define-stumpwm-type :module (input prompt)
