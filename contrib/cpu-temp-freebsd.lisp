@@ -13,6 +13,17 @@
 (defvar *cpus* '(0)
   "CPUs to display")
 
+(defvar *mib-hash* (make-hash-table)
+  "mib arrays cache")
+
+(defun get-cpu-temperature (idx)
+  (multiple-value-bind (mib found)
+      (gethash idx *mib-hash* (freebsd-sysctl:sysctl-name=>mib
+                               (format nil "dev.cpu.~d.temperature" idx)))
+    (if (not found)
+        (setf (gethash idx *mib-hash*) mib))
+    (freebsd-sysctl:sysctl mib)))
+
 (defparameter *indicies* '(#\SUBSCRIPT_ZERO #\SUBSCRIPT_ONE
                            #\SUBSCRIPT_TWO  #\SUBSCRIPT_THREE
                            #\SUBSCRIPT_FOUR #\SUBSCRIPT_FIVE
@@ -42,7 +53,7 @@
   (declare (ignore ml))
   (format nil "CPU temp: ~{~a~^, ~}"
           (mapcar (lambda (cpu)
-                    (format-temperature cpu (cpu-temperature:get-dev.cpu-temperature cpu)))
+                    (format-temperature cpu (get-cpu-temperature cpu)))
           *cpus*)))
 
 (register-module "STUMPWM.CPU-TEMPERATURE-FREEBSD"

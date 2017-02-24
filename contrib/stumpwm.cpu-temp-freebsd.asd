@@ -3,4 +3,4 @@
   :version "1.0"
   :author "Vasily Postnicov <shamaz.mazum at gmail dot com>"
   :components ((:file "cpu-temp-freebsd"))
-  :depends-on (:stumpwm :cpu-temperature))
+  :depends-on (:stumpwm :freebsd-sysctl))
