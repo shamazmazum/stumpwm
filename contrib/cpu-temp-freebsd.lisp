@@ -41,12 +41,9 @@
                  (iteration n nil))))
 
 (defun format-temperature (cpu temp)
-  (format nil "T~a: ^~d ~4f^*°C"
+  (format nil "T~a=^[~a~4f^]°C"
           (number-to-index cpu)
-          (cond
-            ((> temp *critical-level*) 1)
-            ((> temp *hot-level*) 3)
-            (t 2))
+          (bar-zone-color temp *hot-level* *critical-level*)
           temp))
 
 (defun cpu-temperature-modeline (ml)
@@ -58,6 +55,4 @@
 
 (register-module "STUMPWM.CPU-TEMPERATURE-FREEBSD"
                  :init-fn (lambda ()
-                            (pushnew '(#\T cpu-temperature-modeline)
-                                     *screen-mode-line-formatters*
-                                     :test #'equal)))
+                            (add-screen-mode-line-formatter #\T 'cpu-temperature-modeline)))

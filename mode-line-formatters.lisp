@@ -117,11 +117,11 @@ fmt-highlight. Any non-visible windows are colored the
   (declare (ignore ml))
   (time-format *time-modeline-string*))
 
-(defvar *bar-med-color* "^B")
+(defvar *bar-low-color* "^B^2*")
 (defvar *bar-hi-color* "^B^3*")
 (defvar *bar-crit-color* "^B^1*")
 
-(defun bar-zone-color (amount &optional (med 20) (hi 50) (crit 90) reverse)
+(defun bar-zone-color (amount &optional (hi 50) (crit 90) reverse)
   "Return a color command based on the magnitude of the argument. If
 the limits for the levels aren't specified, they default to sensible
 values for a percentage. With reverse, lower numbers are more
@@ -129,8 +129,7 @@ critical."
   (labels ((past (n) (funcall (if reverse #'<= #'>=) amount n)))
     (cond ((past crit) *bar-crit-color*)
           ((past hi) *bar-hi-color*)
-          ((past med) *bar-med-color*)
-          (t ""))))
+          (t *bar-low-color*))))
 
 (defun repeat (n char)
   (make-string n :initial-element char))
