@@ -27,8 +27,7 @@
 
 (export '(*resize-increment*
           iresize
-          abort-iresize
-          exit-iresize))
+          setup-iresize))
 
 (defvar *resize-increment* 10
   "Number of pixels to increment by when interactively resizing frames.")
@@ -36,61 +35,36 @@
 (defun set-resize-increment (val)
   (setf *resize-increment* val))
 
-(defun update-resize-map (fx fy fh fw dh dw)
-  (let ((m (or *resize-map* (setf *resize-map* (make-sparse-keymap)))))
-    (let ((i *resize-increment*))
-         (labels ((dks (m keys c)
-                 (let ((cmd (format nil c i)))
-                   (dolist (k keys)
-                    (define-key m (kbd k) cmd)))))
-        (if (or (= fx 0)
-                (< (+ fx fw) dw))
-            (progn
-              (dks m '("Right" "f" "l" "C-f") "resize ~D 0")
-              (dks m '("Left"  "b" "h" "C-b") "resize -~D 0"))
-            (progn
-              (dks m '("Right" "f" "l" "C-f") "resize -~D 0")
-              (dks m '("Left"  "b" "h" "C-b") "resize ~D 0")))
-        (if (or (= fy 0)
-                (< (+ fy fh) dh))
-            (progn
-              (dks m '("Up" "p" "k" "C-p") "resize 0 -~D")
-              (dks m '("Down" "n" "j" "C-n") "resize 0 ~D"))
-            (progn
-              (dks m '("Up" "p" "k" "C-p") "resize 0 ~D")
-              (dks m '("Down" "n" "j" "C-n") "resize 0 -~D")))))
-    
-    (define-key m (kbd "RET") "exit-iresize")
-    (define-key m (kbd "C-g") "abort-iresize")
-    (define-key m (kbd "ESC") "abort-iresize")))
+(defun single-frame-p ()
+  "Checks if there's only one frame."
+  (let ((frame (tile-group-current-frame (current-group))))
+    (atom (tile-group-frame-head (current-group)
+                                 (frame-head (current-group)
+                                             frame)))))
 
+(defun abort-resize-p ()
+  "Resize is only available if there's more than one frame."
+  (when (single-frame-p)
+    (message "There's only 1 frame!")
+    t))
 
+(defun setup-iresize ()
+  "Start the interactive resize mode."
+  (when *resize-hides-windows*
+    (dolist (f (head-frames (current-group) (current-head)))
+      (clear-frame f (current-group))))
+  (draw-frame-outlines (current-group) (current-head)))
 
-(defcommand (iresize tile-group) () ()
-  "Start the interactive resize mode. A new keymap specific to
-resizing the current frame is loaded. Hit @key{C-g}, @key{RET}, or
-@key{ESC} to exit."
-  (let* ((group (current-group))
-         (frame (tile-group-current-frame group))
-         (head-frame (frame-head group (tile-group-current-frame group)))
-         (dx (frame-x head-frame))
-         (dh (frame-height head-frame))
-         (dw (frame-width head-frame))
-         (fx (- (frame-x frame) dx))
-         (fy (frame-y frame))
-         (fh (frame-height frame))
-         (fw (frame-width frame)))
-    (if (atom (tile-group-frame-head group (frame-head group frame)))
-
-        (message "There's only 1 frame!")
-        (progn
-          (when *resize-hides-windows*
-            (dolist (f (head-frames group (current-head)))
-                      (clear-frame f group)))
-          (message "Resize Frame")
-          (update-resize-map fx fy fh fw dh dw)
-          (push-top-map *resize-map*)
-          (draw-frame-outlines (current-group) (current-head))))))
+(defcommand resize-direction (d)
+  (:direction)
+  (let* ((formats '((:up . "0 -~D")
+                    (:down . "0 ~D")
+                    (:left . "-~D 0")
+                    (:right . "~D 0")))
+         (deltas (format nil (cdr (assoc (princ d) formats))
+                         *resize-increment*))
+         (to-be-run (concatenate 'string "resize " deltas)))
+    (run-commands to-be-run)))
 
 (defun resize-unhide ()
   (clear-frame-outlines (current-group))
@@ -105,15 +79,26 @@ resizing the current frame is loaded. Hit @key{C-g}, @key{RET}, or
       (when (current-window)
         (focus-window (current-window))))))
 
-(defcommand (abort-iresize tile-group) () ()
-  "Exit from the interactive resize mode."
-  (resize-unhide)
-  (message "Abort resize")
-  ;; TODO: actually revert the frames
-  (pop-top-map))
+(define-interactive-keymap (iresize tile-group) (:on-enter #'setup-iresize
+                                                 :on-exit #'resize-unhide
+                                                 :abort-if #'abort-resize-p)
 
-(defcommand (exit-iresize tile-group) () ()
-  "Exit from the interactive resize mode."
-  (resize-unhide)
-  (message "Resize Complete")
-  (pop-top-map))
+  ((kbd "Up") "resize-direction up")
+  ((kbd "C-p") "resize-direction up")
+  ((kbd "p") "resize-direction up")
+  ((kbd "k") "resize-direction up")
+
+  ((kbd "Down") "resize-direction down")
+  ((kbd "C-n") "resize-direction down")
+  ((kbd "n") "resize-direction down")
+  ((kbd "j") "resize-direction down")
+
+  ((kbd "Left") "resize-direction left")
+  ((kbd "C-b") "resize-direction left")
+  ((kbd "b") "resize-direction left")
+  ((kbd "h") "resize-direction left")
+
+  ((kbd "Right") "resize-direction right")
+  ((kbd "C-f") "resize-direction right")
+  ((kbd "f") "resize-direction right")
+  ((kbd "l") "resize-direction right"))

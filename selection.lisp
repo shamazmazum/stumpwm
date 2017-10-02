@@ -50,13 +50,23 @@
   (case target
     ;; they're requesting what targets are available
     (:targets
-     (xlib:change-property requestor property (list :targets :string :utf8_string) target 8 :mode :replace))
+     (xlib:change-property requestor
+                           property
+                           (mapcar (lambda (x)
+                                     (xlib:intern-atom *display* x))
+                                   '(:targets :string :utf8_string))
+                           :atom
+                           32
+                           :mode :replace))
     ;; send them a string
     (:string
      (xlib:change-property requestor property (getf *x-selection* selection)
                            :string 8 :mode :replace :transform #'xlib:char->card8))
     (:utf8_string
-     (xlib:change-property requestor property (string-to-utf8 (getf *x-selection* selection)) target 8 :mode :replace))
+     (xlib:change-property requestor property (sb-ext:string-to-octets
+                                               (getf *x-selection* selection)
+                                               :external-format :utf-8)
+                           target 8 :mode :replace))
     ;; we don't know how to handle anything else
     (t
      (setf property nil)))

@@ -39,6 +39,8 @@
 (defvar *default-group-type* 'tile-group
   "The type of group that should be created by default.")
 
+(defvar *always-show-windows* ()
+  "The list of windows shown in all groups")
 ;;; The group API
 (defgeneric group-startup (group)
   (:documentation "Called on all groups while stumpwm is starting up."))
@@ -95,14 +97,10 @@ needs to redraw anything on it, this is where it should do it."))
   (:documentation "When a head or its usable area is resized, this is
 called. When the modeline size changes, this is called."))
 
-(defmethod group-button-press :before ((group group) x y (where window))
-  (declare (ignore x y))
-  (when (eq *mouse-focus-policy* :click)
-    (focus-all where)
-    (update-all-mode-lines)))
-
-(defmethod group-button-press ((group group) x y (window window))
-  (declare (ignore group x y window)))
+(defmethod group-delete-window (group window)
+  (when (find window *always-show-windows*)
+    (disable-always-show-window window (current-screen)))
+  (call-next-method))
 
 (defun current-group (&optional (screen (current-screen)))
   "Return the current group for the current screen, unless
@@ -175,8 +173,48 @@ at 0. Return a netwm compliant group id."
       (xlib:change-property (screen-root screen) :_NET_CURRENT_DESKTOP
                             (list (netwm-group-id new-group))
                             :cardinal 32)
+      (mapc (lambda (w)
+              (xwin-unhide (window-xwin w) (window-parent w)))
+            *always-show-windows*)
       (update-all-mode-lines)
       (run-hook-with-args *focus-group-hook* new-group old-group))))
+
+(defun copy-window-to-group (group window)
+  (setf (window-number window) (find-free-window-number group))
+  (push window (group-windows group))
+  (group-add-window group window))
+
+(defun always-show-window (window screen)
+  (let ((groups-to-add-w-to (remove (current-group) (screen-groups screen))))
+    (mapc (lambda (group) (copy-window-to-group group window))
+          groups-to-add-w-to))
+  (xlib:change-property (window-xwin window) :_NET_WM_DESKTOP
+                        (list #xFFFFFFFF)
+                        :cardinal 32)
+  (push window *always-show-windows*))
+
+(defun disable-always-show-window (window screen)
+  (let* ((g (current-group))
+         (groups-to-remove-w-from (remove g (screen-groups screen))))
+    (mapc (lambda (group)
+            (setf (group-windows group)
+                  (remove window (group-windows group))))
+          groups-to-remove-w-from)
+    (setf (window-group window) g
+          (window-number window) (find-free-window-number g)
+          *always-show-windows* (remove window *always-show-windows*))
+    (xlib:change-property (window-xwin window) :_NET_WM_DESKTOP
+                          (list (netwm-group-id g))
+                          :cardinal 32)))
+
+(defcommand toggle-always-show () ()
+  "Toggle whether the current window is shown in all groups."
+  (let ((w (current-window))
+        (screen (current-screen)))
+    (when w
+      (if (find w *always-show-windows*)
+          (disable-always-show-window w screen)
+          (always-show-window w screen)))))
 
 (defun move-window-to-group (window to-group)
   (labels ((really-move-window (window to-group)
@@ -277,7 +315,9 @@ Groups are known as \"virtual desktops\" in the NETWM standard."
     (xlib:change-property root :_NET_DESKTOP_NAMES
                           (let ((names (mapcan
                                         (lambda (group)
-                                          (list (string-to-utf8 (group-name group))
+                                          (list (sb-ext:string-to-octets
+                                                 (group-name group)
+                                                 :external-format :utf-8)
                                                 '(0)))
                                         (sort-groups screen))))
                             (apply #'concatenate 'list names))
@@ -291,6 +331,20 @@ Groups are known as \"virtual desktops\" in the NETWM standard."
       (netwm-update-groups screen)
       (netwm-set-group-properties screen))))
 
+(defun %ensure-group (group-name group-type screen)
+  "If there is a group named with GROUP-NAME in SCREEN return it, otherwise create it."
+  (or (find-group screen group-name)
+      (let ((group (make-instance group-type
+                                  :screen screen
+                                  :number (if (char= (char group-name 0) #\.)
+                                                     (find-free-hidden-group-number screen)
+                                                     (find-free-group-number screen))
+                                  :name group-name)))
+        (setf (screen-groups screen) (append (screen-groups screen) (list group)))
+        (netwm-set-group-properties screen)
+        (netwm-update-groups screen)
+        group)))
+
 (defun add-group (screen name &key background (type *default-group-type*))
   "Create a new group in SCREEN with the supplied name. group names
     starting with a . are considered hidden groups. Hidden groups are
@@ -299,23 +353,13 @@ Groups are known as \"virtual desktops\" in the NETWM standard."
     numbers."
   (check-type screen screen)
   (check-type name string)
-  (if (or (string= name "")
-          (string= name "."))
-      (error "Groups must have a name.")
-      (let ((ng (or (find-group screen name)
-                    (let ((ng (make-instance type
-                                             :screen screen
-                                             :number (if (char= (char name 0) #\.)
-                                                         (find-free-hidden-group-number screen)
-                                                         (find-free-group-number screen))
-                                             :name name)))
-                      (setf (screen-groups screen) (append (screen-groups screen) (list ng)))
-                      (netwm-set-group-properties screen)
-                      (netwm-update-groups screen)
-                      ng))))
-        (unless background
-          (switch-to-group ng))
-        ng)))
+  (assert (not (member name '("" ".") :test #'string=)) nil "Groups must have a name~%")
+  (let ((group (%ensure-group name type screen)))
+    (unless background
+      (switch-to-group group))
+    (mapc (lambda (window) (copy-window-to-group group window))
+          *always-show-windows*)
+    group))
 
 (defun find-group (screen name)
   "Return the group with the name, NAME. Or NIL if none exists."
@@ -330,19 +374,17 @@ Groups are known as \"virtual desktops\" in the NETWM standard."
 (defun group-forward (current list)
   "Switch to the next non-hidden-group in the list, if one
 exists. Returns the new group."
-  (let ((ng (next-group current (non-hidden-groups list))))
-    (when ng
-      (switch-to-group ng)
-      ng)))
+  (when-let ((ng (next-group current (non-hidden-groups list))))
+    (switch-to-group ng)
+    ng))
 
 (defun group-forward-with-window (current list)
   "Switch to the next group in the list, if one exists, and moves the
 current window of the current group to the new one."
-  (let ((next (group-forward current list))
-        (win (group-current-window current)))
-    (when (and next win)
-      (move-window-to-group win next)
-      (really-raise-window win))))
+  (when-let ((next (group-forward current list))
+             (win (group-current-window current)))
+    (move-window-to-group win next)
+    (really-raise-window win)))
 
 (defcommand gnew (name) ((:string "Group Name: "))
   "Create a new group with the specified name. The new group becomes the
@@ -441,13 +483,12 @@ the default group formatting and window formatting, respectively."
 (defcommand grouplist (&optional (fmt *group-format*)) (:rest)
   "Allow the user to select a group from a list, like windowlist but
   for groups"
-  (let ((group (second (select-from-menu
-		(current-screen)
-		(mapcar (lambda (g)
-			  (list (format-expand *group-formatters* fmt g) g))
-			(screen-groups (current-screen)))))))
-    (when group
-      (switch-to-group group))))
+  (when-let ((group (second (select-from-menu
+                             (current-screen)
+                             (mapcar (lambda (g)
+                                       (list (format-expand *group-formatters* fmt g) g))
+                                     (screen-groups (current-screen)))))))
+    (switch-to-group group)))
 
 (defcommand gmove (to-group) ((:group "To Group: "))
 "Move the current window to the specified group."

@@ -1,9 +1,6 @@
 ;;; implementation of a floating style window management group
-(defpackage #:stumpwm.floating-group
-  (:use :cl :stumpwm)
-  (:export #:float-group))
 
-(in-package :stumpwm.floating-group)
+(in-package #:stumpwm)
 
 ;;; floating window
 
@@ -131,32 +128,35 @@
 
 (defmethod group-startup ((group float-group)))
 
-(defmethod group-add-window ((group float-group) window &key &allow-other-keys)
-  (change-class window 'float-window)
-  (float-window-align window)
-  (focus-window window))
+(flet ((add-float-window (group window)
+         (change-class window 'float-window)
+         (float-window-align window)
+         (group-focus-window group window)))
+  (defmethod group-add-window ((group float-group) window &key &allow-other-keys)
+    (add-float-window group window))
+  (defmethod group-add-window (group (window float-window) &key &allow-other-keys)
+    (add-float-window group window)))
 
-(defun &float-focus-next (group)
+(defun %float-focus-next (group)
   (if (group-windows group)
-      (focus-window (first (group-windows group)))
+      (group-focus-window group (first (group-windows group)))
       (no-focus group nil)))
 
-(defmethod group-delete-window ((group float-group) window)
+(defmethod group-delete-window ((group float-group) (window float-window))
   (declare (ignore window))
-  (&float-focus-next group))
+  (%float-focus-next group))
 
 (defmethod group-wake-up ((group float-group))
-  (&float-focus-next group))
+  (%float-focus-next group))
 
 (defmethod group-suspend ((group float-group)))
 
-(defmethod group-current-window ((group float-group))
-  (screen-focus (group-screen group)))
-
 (defmethod group-current-head ((group float-group))
-  (if (group-current-window group)
-      (window-head (group-current-window group))
-      (first (screen-heads (group-screen group)))))
+  (if-let ((current-window (group-current-window group)))
+    (window-head current-window)
+    (multiple-value-bind (x y)
+        (xlib:global-pointer-position *display*)
+      (find-head-by-position (group-screen group) x y))))
 
 (defun float-window-align (window)
   (with-accessors ((parent window-parent)
@@ -181,16 +181,16 @@
 
 (defmethod group-raise-request ((group float-group) window type)
   (declare (ignore type))
-  (focus-window window))
+  (group-focus-window group window))
 
 (defmethod group-lost-focus ((group float-group))
-  (&float-focus-next group))
+  (%float-focus-next group))
 
 (defmethod group-indicate-focus ((group float-group))
   )
 
 (defmethod group-focus-window ((group float-group) window)
-  (focus-window window nil))
+  (focus-window window))
 
 (defmethod group-root-exposure ((group float-group))
   )
@@ -210,12 +210,12 @@
 (defmethod group-sync-head ((group float-group) head)
   (declare (ignore head)))
 
-(defmethod group-button-press ((group float-group) x y (window float-window))
+(defmethod group-button-press (group x y (window float-window))
   (let ((screen (group-screen group))
         (initial-width (xlib:drawable-width (window-parent window)))
         (initial-height (xlib:drawable-height (window-parent window))))
     (when (member *mouse-focus-policy* '(:click :sloppy))
-      (focus-window window))
+      (group-focus-window group window))
 
     ;; When in border
     (multiple-value-bind (relx rely same-screen-p child state-mask)
@@ -282,7 +282,9 @@
                   (window-y window) (xlib:drawable-y (window-parent window)))))))))
 
 (defmethod group-button-press ((group float-group) x y where)
-  (declare (ignore x y where)))
+  (declare (ignore x y where))
+  (when (next-method-p)
+    (call-next-method)))
 
 ;;; Bindings
 
@@ -291,11 +293,10 @@
 (defvar *float-group-root-map* (make-sparse-keymap))
 
 
-(in-package :stumpwm)
 (defcommand gnew-float (name) ((:rest "Group Name: "))
   "Create a floating window group with the specified name and switch to it."
-  (add-group (current-screen) name :type 'stumpwm.floating-group:float-group))
+  (add-group (current-screen) name :type 'float-group))
 
 (defcommand gnewbg-float (name) ((:rest "Group Name: "))
   "Create a floating window group with the specified name, but do not switch to it."
-  (add-group (current-screen) name :background t :type 'stumpwm.floating-group:float-group))
+  (add-group (current-screen) name :background t :type 'float-group))

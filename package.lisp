@@ -18,10 +18,9 @@
 ;; <http://www.gnu.org/licenses/>.
 
 (defpackage :stumpwm
-  (:use :cl)
-  (:shadow #:yes-or-no-p #:y-or-n-p)
-  (:export
-   #:call-in-main-thread))
+  (:use :cl
+        #:alexandria)
+  (:shadow #:yes-or-no-p #:y-or-n-p))
 
 (defpackage :stumpwm-user
   (:use :cl :stumpwm))

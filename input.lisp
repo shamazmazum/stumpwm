@@ -40,42 +40,40 @@
 (defstruct input-line
   string position history history-bk password)
 
-(defvar *input-map* nil
+(defvar *input-map*
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "DEL") 'input-delete-backward-char)
+    (define-key map (kbd "M-DEL") 'input-backward-kill-word)
+    (define-key map (kbd "C-d") 'input-delete-forward-char)
+    (define-key map (kbd "M-d") 'input-forward-kill-word)
+    (define-key map (kbd "Delete") 'input-delete-forward-char)
+    (define-key map (kbd "C-f") 'input-forward-char)
+    (define-key map (kbd "Right") 'input-forward-char)
+    (define-key map (kbd "M-f") 'input-forward-word)
+    (define-key map (kbd "C-b") 'input-backward-char)
+    (define-key map (kbd "Left") 'input-backward-char)
+    (define-key map (kbd "M-b") 'input-backward-word)
+    (define-key map (kbd "C-a") 'input-move-beginning-of-line)
+    (define-key map (kbd "Home") 'input-move-beginning-of-line)
+    (define-key map (kbd "C-e") 'input-move-end-of-line)
+    (define-key map (kbd "End") 'input-move-end-of-line)
+    (define-key map (kbd "C-k") 'input-kill-line)
+    (define-key map (kbd "C-u") 'input-kill-to-beginning)
+    (define-key map (kbd "C-p") 'input-history-back)
+    (define-key map (kbd "Up") 'input-history-back)
+    (define-key map (kbd "C-n") 'input-history-forward)
+    (define-key map (kbd "Down") 'input-history-forward)
+    (define-key map (kbd "RET") 'input-submit)
+    (define-key map (kbd "C-g") 'input-abort)
+    (define-key map (kbd "ESC") 'input-abort)
+    (define-key map (kbd "C-y") 'input-yank-selection)
+    (define-key map (kbd "C-Y") 'input-yank-clipboard)
+    (define-key map (kbd "TAB") 'input-complete-forward)
+    (define-key map (kbd "ISO_Left_Tab") 'input-complete-backward)
+    (define-key map t 'input-self-insert)
+    map)
   "This is the keymap containing all input editing key bindings.")
 
-(when (null *input-map*)
-  (setf *input-map*
-        (let ((map (make-sparse-keymap)))
-          (define-key map (kbd "DEL") 'input-delete-backward-char)
-          (define-key map (kbd "M-DEL") 'input-backward-kill-word)
-          (define-key map (kbd "C-d") 'input-delete-forward-char)
-          (define-key map (kbd "M-d") 'input-forward-kill-word)
-          (define-key map (kbd "Delete") 'input-delete-forward-char)
-          (define-key map (kbd "C-f") 'input-forward-char)
-          (define-key map (kbd "Right") 'input-forward-char)
-          (define-key map (kbd "M-f") 'input-forward-word)
-          (define-key map (kbd "C-b") 'input-backward-char)
-          (define-key map (kbd "Left") 'input-backward-char)
-          (define-key map (kbd "M-b") 'input-backward-word)
-          (define-key map (kbd "C-a") 'input-move-beginning-of-line)
-          (define-key map (kbd "Home") 'input-move-beginning-of-line)
-          (define-key map (kbd "C-e") 'input-move-end-of-line)
-          (define-key map (kbd "End") 'input-move-end-of-line)
-          (define-key map (kbd "C-k") 'input-kill-line)
-          (define-key map (kbd "C-u") 'input-kill-to-beginning)
-          (define-key map (kbd "C-p") 'input-history-back)
-          (define-key map (kbd "Up") 'input-history-back)
-          (define-key map (kbd "C-n") 'input-history-forward)
-          (define-key map (kbd "Down") 'input-history-forward)
-          (define-key map (kbd "RET") 'input-submit)
-          (define-key map (kbd "C-g") 'input-abort)
-          (define-key map (kbd "ESC") 'input-abort)
-          (define-key map (kbd "C-y") 'input-yank-selection)
-          (define-key map (kbd "C-Y") 'input-yank-clipboard)
-          (define-key map (kbd "TAB") 'input-complete-forward)
-          (define-key map (kbd "ISO_Left_Tab") 'input-complete-backward)
-          (define-key map t 'input-self-insert)
-          map)))
 
 (defvar *input-history* nil
   "History for the input line.")
@@ -193,8 +191,8 @@
 
 (defun completing-read (screen prompt completions &key (initial-input "") require-match)
   "Read a line of input through stumpwm and return it with TAB
-completion. completions can be a list, an fbound symbol, or a
-function. if its an fbound symbol or a function then that function is
+completion. Completions can be a list, an fbound symbol, or a
+function. If its an fbound symbol or a function then that function is
 passed the substring to complete on and is expected to return a list
 of matches. If require-match argument is non-nil then the input must
 match with an element of the completions."
@@ -206,7 +204,7 @@ match with an element of the completions."
       (when line (string-trim " " line)))))
 
 (defun read-one-line (screen prompt &key (initial-input "") require-match password)
-  "Read a line of input through stumpwm and return it. returns nil if the user aborted."
+  "Read a line of input through stumpwm and return it. Returns nil if the user aborted."
   (let ((*input-last-command* nil)
         (input (make-input-line :string (make-input-string initial-input)
                                 :position (length initial-input)

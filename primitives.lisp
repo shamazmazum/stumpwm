@@ -25,8 +25,6 @@
 
 (in-package :stumpwm)
 
-#+ecl (require "clx")
-
 (export '(*suppress-abort-messages*
           *suppress-frame-indicator*
           *suppress-window-placement-indicator*
@@ -60,6 +58,8 @@
           *mode-line-click-hook*
           *pre-command-hook*
           *post-command-hook*
+          *selection-notify-hook*
+          *menu-selection-hook*
           *display*
           *shell-program*
           *maxsize-border-width*
@@ -124,7 +124,6 @@
           concat
           data-dir-file
           dformat
-          flatten
           define-frame-preference
           redirect-all-output
           remove-hook
@@ -172,13 +171,6 @@
           stumpwm-warning))
 
 
-
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  ;; Currently we only support pause-less CALL-IN-MAIN-THREAD for
-  ;; SBCL, since it requires the new io-loop.
-  #+sbcl
-  (pushnew :call-in-main-thread *features*))
-
 ;;; Message Timer
 (defvar *suppress-abort-messages* nil
   "Suppress abort message when non-nil.")
@@ -283,7 +275,7 @@ window group and frame")
 called with 2 arguments: the current frame and the last frame.")
 
 (defvar *new-frame-hook* '()
-  "A hook called when a new frame is created. the hook is called with
+  "A hook called when a new frame is created. The hook is called with
 the frame as an argument.")
 
 (defvar *split-frame-hook* '()
@@ -332,6 +324,14 @@ the command as a symbol.")
 (defvar *post-command-hook* '()
   "Called after a command is called. It is called with 1 argument:
 the command as a symbol.")
+
+(defvar *selection-notify-hook* '()
+  "Called after a :selection-notify event is processed. It is called
+with 1 argument: the selection as a string.")
+
+(defvar *menu-selection-hook* '()
+  "Called after an item is selected in the windows menu. It is called
+with 1 argument: the menu.")
 
 ;; Data types and globals used by stumpwm
 
@@ -561,8 +561,10 @@ exist, in which case they go into the current group.")
 (defclass group ()
   ((screen :initarg :screen :accessor group-screen)
    (windows :initform nil :accessor group-windows)
+   (current-window :initform nil :accessor group-current-window)
    (number :initarg :number :accessor group-number)
-   (name :initarg :name :accessor group-name)))
+   (name :initarg :name :accessor group-name)
+   (on-top-windows :initform nil :accessor group-on-top-windows)))
 
 (defclass window ()
   ((xwin    :initarg :xwin    :accessor window-xwin)
@@ -701,7 +703,7 @@ chosen, resignal the error."
   (run-hook-with-args hook))
 
 (defmacro add-hook (hook fn)
-  "Add @var{function} to the hook @var{hook-variable}. For example, to
+  "Add @var{function} to the @var{hook-variable}. For example, to
 display a message whenever you switch frames:
 
 @example
@@ -806,7 +808,7 @@ string which is split to obtain the individual regexps. "
 (defvar *debug-expose-events* nil
   "Set this variable for a visual indication of expose events on internal StumpWM windows.")
 
-(defvar *debug-stream* *error-output*
+(defvar *debug-stream* (make-synonym-stream '*error-output*)
   "This is the stream debugging output is sent to. It defaults to
 *error-output*. It may be more convenient for you to pipe debugging
 output directly to a file.")
@@ -904,7 +906,7 @@ with the following formatting options:
 
 @table @asis
 @item %n
-Substitutes the windows number translated via *window-number-map*, if there
+Substitutes the window's number translated via *window-number-map*, if there
 are more windows than *window-number-map* then will use the window-number.
 @item %s
 Substitute the window's status. * means current window, + means last
@@ -924,11 +926,11 @@ size. For instance, @samp{%20t} crops the window's title to 20
 characters.")
 
 (defvar *window-info-format* "%wx%h %n (%t)"
-  "The format used in the info command.
+  "The format used in the info command. See
   @var{*window-format*} for formatting details.")
 
 (defparameter *window-format-by-class* "%m%n %c %s%50t"
-  "The format used in the info winlist-by-class command.
+  "The format used in the info winlist-by-class command. See
  @var{*window-format*} for formatting details.")
 
 (defvar *group-formatters* '((#\n group-map-number)
@@ -1020,11 +1022,6 @@ raise/map denial messages will be seen.")
                   (apply 'window-matches-properties-p window props))
                 deny-list)
        t)))
-
-(defun flatten (list)
-  "Flatten LIST"
-  (labels ( (mklist (x) (if (listp x) x (list x))) )
-    (mapcan #'(lambda (x) (if (atom x) (mklist x) (flatten x))) list)))
 
 (defun list-splice-replace (item list &rest replacements)
   "splice REPLACEMENTS into LIST where ITEM is, removing

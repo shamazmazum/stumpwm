@@ -74,6 +74,12 @@ may need to sync itself. WHAT-CHANGED is a hint at what changed."))
 (defgeneric really-raise-window (window)
   (:documentation "Really bring the window to the top of the window stack in group"))
 
+
+(defmethod window-group :around ((window window))
+  (if (find window *always-show-windows*)
+      (current-group)
+      (call-next-method)))
+
 ;; Urgency / demands attention
 
 (defun register-urgent-window (window)
@@ -98,12 +104,8 @@ WINDOW"
   (let* ((hints (xlib:wm-hints (window-xwin window)))
          (flags (when hints (xlib:wm-hints-flags hints))))
     (when flags
-      (setf (xlib:wm-hints-flags hints)
-            ;; XXX: as of clisp 2.46 flags is a list, not a number.
-            (if (listp flags)
-                (remove :urgency flags)
-                (logand (lognot 256) flags)))
-      (setf (xlib:wm-hints (window-xwin window)) hints)))
+      (setf (xlib:wm-hints-flags hints) (logand (lognot 256) flags)
+            (xlib:wm-hints (window-xwin window)) hints)))
   (remove-wm-state (window-xwin window) :_NET_WM_STATE_DEMANDS_ATTENTION)
   (unregister-urgent-window window))
 
@@ -112,10 +114,7 @@ WINDOW"
 _NET_WM_STATE_DEMANDS_ATTENTION set"
   (let* ((hints (xlib:wm-hints (window-xwin window)))
          (flags (when hints (xlib:wm-hints-flags hints))))
-    ;; XXX: as of clisp 2.46 flags is a list, not a number.
-    (or (and flags (if (listp flags)
-                       (find :urgency flags)
-                       (logtest 256 flags)))
+    (or (and flags (logtest 256 flags))
         (find-wm-state (window-xwin window) :_NET_WM_STATE_DEMANDS_ATTENTION))))
 
 (defcommand next-urgent () ()
@@ -232,8 +231,10 @@ _NET_WM_STATE_DEMANDS_ATTENTION set"
   (xlib:window-id (window-xwin window)))
 
 (defun window-in-current-group-p (window)
-  (eq (window-group window)
-      (screen-current-group (window-screen window))))
+  (or
+   (find window *always-show-windows*)
+   (eq (window-group window)
+       (screen-current-group (window-screen window)))))
 
 (defun window-screen (window)
   (group-screen (window-group window)))
@@ -336,8 +337,15 @@ _NET_WM_STATE_DEMANDS_ATTENTION set"
     (unhide-window win)
     (update-configuration win))
   (when (window-in-current-group-p win)
-    (setf (xlib:window-priority (window-parent win)) :top-if)))
+    (setf (xlib:window-priority (window-parent win)) :top-if))
+  (raise-top-windows))
 ;; some handy wrappers
+
+(defun raise-top-windows ()
+  (mapc (lambda (w)
+          (when (window-in-current-group-p w)
+            (setf (xlib:window-priority (window-parent w)) :top-if)))
+        (group-on-top-windows (current-group))))
 
 (defun xwin-border-width (win)
   (xlib:drawable-border-width win))
@@ -910,6 +918,7 @@ needed."
   "don't focus any window but still read keyboard events."
   (dformat 3 "no-focus~%")
   (let* ((screen (group-screen group)))
+    (setf (group-current-window group) nil)
     (when (eq group (screen-current-group screen))
       (xlib:set-input-focus *display* (screen-focus-window screen) :POINTER-ROOT)
       (setf (screen-focus screen) nil)
@@ -938,6 +947,7 @@ needed."
        (let ((hints (xlib:wm-hints xwin)))
          (when (or (null hints) (eq (xlib:wm-hints-input hints) :on))
            (screen-set-focus screen window)))
+       (setf (group-current-window group) window)
        (update-decoration window)
        (when cw
          (update-decoration cw))
@@ -951,6 +961,7 @@ needed."
        (run-hook-with-args *focus-window-hook* window cw))
       (t
        (screen-set-focus screen window)
+       (setf (group-current-window group) window)
        (update-decoration window)
        (when cw
          (update-decoration cw))
@@ -993,6 +1004,8 @@ selected."
   "Delete a window. By default delete the current window. This is a
 request sent to the window. The window's client may decide not to
 grant the request or may not be able to if it is unresponsive."
+  (when (find window *always-show-windows*)
+    (disable-always-show-window window (current-screen)))
   (when window
     (send-client-message window :WM_PROTOCOLS (xlib:intern-atom *display* :WM_DELETE_WINDOW))))
 
@@ -1045,7 +1058,7 @@ window. Default to the current window. if
 
 (defcommand other-window (&optional (group (current-group))) ()
   "Switch to the window last focused."
-  (let* ((wins (group-windows group))
+  (let* ((wins (only-tile-windows (group-windows group)))
          ;; the frame could be empty
          (win (if (group-current-window group)
                   (second wins)
@@ -1092,8 +1105,8 @@ is using the number, then the windows swap numbers. Defaults to current group."
 ;; but window-list was added latter and I didn't want to break other's code.
 (defcommand windowlist (&optional (fmt *window-format*)
                                   window-list) (:rest)
-  "Allow the user to select a window from the list of windows and focus the 
-selected window. For information of menu bindings @xref{Menus}. The optional
+  "Allow the user to select a window from the list of windows and focus the
+selected window. For information of menu bindings see @ref{Menus}. The optional
  argument @var{fmt} can be specified to override the default window formatting.
 The optional argument @var{window-list} can be provided to show a custom window
 list (see @command{windowlist-by-class}). The default window list is the list of
@@ -1113,7 +1126,7 @@ by number and if the @var{windows-list} is provided, it is shown unsorted (as-is
 
 (defcommand windowlist-by-class (&optional (fmt *window-format-by-class*)) (:rest)
   "Allow the user to select a window from the list of windows (sorted by class)
- and focus the selected window. For information of menu bindings @xref{Menus}. 
+ and focus the selected window. For information of menu bindings see @ref{Menus}.
 The optional argument @var{fmt} can be specified to override the default window
 formatting. This is a simple wrapper around the command @command{windowlist}."
   (windowlist fmt (sort-windows-by-class (group-windows (current-group)))))
@@ -1202,3 +1215,13 @@ be used to override the default window formatting."
     (let ((win (find window (group-windows (current-group))
                      :test #'string= :key #'window-name)))
       (setf (window-shadow win) number)))
+
+(defcommand toggle-always-on-top () ()
+  "Toggle whether the current window always appears over other windows.
+The order windows are added to this list determines priority."
+  (let ((w (current-window))
+        (windows (group-on-top-windows (current-group))))
+    (when w
+      (if (find w windows)
+          (setf (group-on-top-windows (current-group)) (remove w windows))
+          (push (current-window) (group-on-top-windows (current-group)))))))

@@ -37,49 +37,62 @@
           (tile-group-current-frame group) (first heads))))
 
 (defmethod group-startup ((group tile-group))
-  (let ((window (first (group-windows group))))
-    (if window
-        (focus-frame group (window-frame window))
-        (focus-frame group (tile-group-current-frame group)))))
+  (let* ((window (first (group-tile-windows group)))
+         (frame (if (typep window 'tile-window)
+                    (window-frame window)
+                    (tile-group-current-frame group))))
+    (focus-frame group frame)))
 
 (defmethod group-wake-up ((group tile-group))
   (focus-frame group (tile-group-current-frame group))
   ;; doesn't get called by focus-frame
   (show-frame-indicator group))
 
-(defmethod group-delete-window ((group tile-group) window)
+(defmethod group-delete-window ((group tile-group) (window tile-window))
   (let ((f (window-frame window)))
     ;; maybe pick a new window for the old frame
     (when (eq (frame-window f) window)
       (frame-raise-window group f (first (frame-windows group f)) nil))))
 
+(defmethod group-delete-window ((group tile-group) (window float-window))
+  (let* ((windows (group-windows group))
+         (float-w (some (lambda (w) (when (typep w 'float-window) w))
+                        windows))
+         (tile-w (some (lambda (w) (when (typep w 'tile-window) w))
+                       windows)))
+    (cond (float-w (group-focus-window group float-w))
+          (tile-w (frame-raise-window group (window-frame tile-w) tile-w))
+          (t (no-focus group nil)))))
+
 (defmethod group-add-window ((group tile-group) window &key frame raise &allow-other-keys)
   ;; This is important to get the frame slot
-  (change-class window 'tile-window)
-  ;; Try to put the window in the appropriate frame for the group.
-  (setf (window-frame window)
-        (or frame
-            (when *processing-existing-windows*
-              (find-frame group (xlib:drawable-x (window-parent window))
-                          (xlib:drawable-y (window-parent window))))
-            (pick-preferred-frame window)))
-  (when *processing-existing-windows*
-    (setf (frame-window (window-frame window)) window))
-  (when (and frame raise)
-    (setf (tile-group-current-frame group) frame
-          (frame-window frame) nil))
-  (sync-frame-windows group (window-frame window))
-  ;; maybe show the window in its new frame
-  (when (null (frame-window (window-frame window)))
-    (really-raise-window window)))
-
-(defmethod group-current-window ((group tile-group))
-  (frame-window (tile-group-current-frame group)))
+  (if (typep window 'float-window)
+      (call-next-method)
+      (progn
+        (change-class window 'tile-window)
+        ;; Try to put the window in the appropriate frame for the group.
+        (setf (window-frame window)
+              (or frame
+                  (when *processing-existing-windows*
+                    (find-frame group (xlib:drawable-x (window-parent window))
+                                (xlib:drawable-y (window-parent window))))
+                  (pick-preferred-frame window)))
+        (when *processing-existing-windows*
+          (setf (frame-window (window-frame window)) window))
+        (when (and frame raise)
+          (setf (tile-group-current-frame group) frame
+                (frame-window frame) nil))
+        (sync-frame-windows group (window-frame window))
+        ;; maybe show the window in its new frame
+        (when (null (frame-window (window-frame window)))
+          (really-raise-window window)))))
 
 (defmethod group-current-head ((group tile-group))
-  (frame-head group (tile-group-current-frame group)))
+  (if-let ((current-window (group-current-window group)))
+    (window-head current-window)
+    (frame-head group (tile-group-current-frame group))))
 
-(defmethod group-move-request ((group tile-group) window x y relative-to)
+(defmethod group-move-request ((group tile-group) (window tile-window) x y relative-to)
   (when *honor-window-moves*
     (dformat 3 "Window requested new position ~D,~D relative to ~S~%" x y relative-to)
     (let* ((pos  (if (eq relative-to :parent)
@@ -91,11 +104,18 @@
       (when frame
         (pull-window window frame)))))
 
-(defmethod group-resize-request ((group tile-group) window width height)
+(defmethod group-resize-request ((group tile-group) (window tile-window) width height)
   ;; it's important to grant the resize request first so that resize
   ;; increment hints use the proper base size to resize from.
   (set-window-geometry window :width width :height height)
   (maximize-window window))
+
+(defmethod group-resize-request ((group tile-group) (window float-window) width height)
+  (float-window-move-resize window :width width :height height))
+
+(defmethod group-move-request ((group tile-group) (window float-window) x y relative-to)
+  (declare (ignore relative-to))
+  (float-window-move-resize window :x x :y y))
 
 (defmethod group-raise-request ((group tile-group) window stack-mode)
   (when (window-in-current-group-p window)
@@ -115,8 +135,11 @@
 (defmethod group-indicate-focus ((group tile-group))
   (show-frame-indicator group))
 
-(defmethod group-focus-window ((group tile-group) win)
+(defmethod group-focus-window ((group tile-group) (win tile-window))
   (frame-raise-window group (window-frame win) win))
+
+(defmethod group-focus-window ((group tile-group) (window float-window))
+  (focus-window window))
 
 (defmethod group-button-press ((group tile-group) x y (where (eql :root)))
   (when *root-click-focuses-frame*
@@ -125,6 +148,14 @@
         (focus-frame group frame)
         (unless (eq *mouse-focus-policy* :click)
           (update-all-mode-lines))))))
+
+(defmethod group-button-press ((group tile-group) x y (where window))
+  (declare (ignore x y))
+  (when (typep where 'float-window)
+    (call-next-method))
+  (when (eq *mouse-focus-policy* :click)
+    (focus-all where)
+    (update-all-mode-lines)))
 
 (defmethod group-root-exposure ((group tile-group))
   (show-frame-outline group nil))
@@ -142,6 +173,7 @@
         (when (frame-window frame)
           (unhide-window (frame-window frame))))))
 
+;; TODO: This method has not been updated for floating windows
 (defmethod group-remove-head ((group tile-group) head)
   (let ((windows (head-windows group head)))
     ;; Remove it from the frame tree.
@@ -173,10 +205,16 @@
 ;;         (frame-tree (tile-group-frame-tree group)))
 ;;     (when (> index (length frame-tree))
 ;;       (elt frame-tree index))))
+
+(defun group-tile-windows (group)
+  (only-tile-windows (group-windows group)))
+
 (defun tile-group-frame-head (group head)
+  (group-sync-all-heads group)
   (elt (tile-group-frame-tree group) (position head (group-heads group))))
 
 (defun (setf tile-group-frame-head) (frame group head)
+  (group-sync-all-heads group)
   (setf (elt (tile-group-frame-tree group) (position head (group-heads group))) frame))
 
 (defun populate-frames (group)
@@ -316,10 +354,11 @@ T (default) then also focus the frame."
 
 (defun frame-windows (group f)
   (remove-if-not (lambda (w) (eq (window-frame w) f))
-                 (group-windows group)))
+                 (group-tile-windows group)))
 
 (defun frame-sort-windows (group f)
-  (remove-if-not (lambda (w) (eq (window-frame w) f))
+  (remove-if-not (lambda (w) (and (typep w 'tile-window)
+                                  (eq (window-frame w) f)))
                  (sort-windows group)))
 
 (defun copy-frame-tree (tree)
@@ -454,7 +493,7 @@ leaf is the most right/below of its siblings."
   (mapc (lambda (w)
           (when (eq (window-frame w) src)
             (setf (window-frame w) dest)))
-        (group-windows group)))
+        (group-tile-windows group)))
 
 (defun tree-accum-fn (tree acc fn)
   "Run an accumulator function on fn applied to each leaf"
@@ -641,7 +680,7 @@ one."
           (when (eq (window-frame w) frame)
             (dformat 3 "maximizing ~S~%" w)
             (maximize-window w)))
-        (group-windows group)))
+        (group-tile-windows group)))
 
 (defun sync-all-frame-windows (group)
   "synchronize all frames in GROUP."
@@ -896,9 +935,45 @@ windows used to draw the numbers in. The caller must destroy them."
 "Split the current frame into 2 frames, one on top of the other."
   (split-frame-in-dir (current-group) :row (read-from-string ratio)))
 
-(defcommand (remove-split tile-group) (&optional (group (current-group)) (frame (tile-group-current-frame group))) ()
-"Remove the specified frame in the specified group (defaults to current
-group, current frame). Windows in the frame are migrated to the frame taking up its
+(defun split-frame-eql-parts* (group dir amt)
+  (when (> amt 1)
+    (when-let ((new-frame (split-frame group dir (/ (- amt 1) amt))))
+      (cons new-frame (split-frame-eql-parts* group dir (- amt 1))))))
+
+(defun split-frame-eql-parts (group dir amt)
+  "Splits frame in equal parts defined by amt."
+  (assert (> amt 1))
+  (let ((f (tile-group-current-frame group))
+        (new-frame-numbers (split-frame-eql-parts* group dir amt)))
+    (if (= (list-length new-frame-numbers) (- amt 1))
+        (progn
+          (when (frame-window f)
+            (update-decoration (frame-window f)))
+          (show-frame-indicator group))
+        (let ((head (frame-head group f)))
+          (setf (tile-group-frame-head group head)
+                (reduce (lambda (tree num)
+                          (remove-frame tree
+                                        (frame-by-number group num)))
+                        new-frame-numbers
+                        :initial-value (tile-group-frame-head group head)))
+          (message "Cannot split. Maybe current frame is too small.")))))
+
+(defcommand (hsplit-equally tile-group) (amt)
+    ((:number "Enter the number of frames: "))
+"Split current frame in n rows of equal size."
+  (split-frame-eql-parts (current-group) :row amt))
+
+(defcommand (vsplit-equally tile-group) (amt)
+    ((:number "Enter the number of frames: "))
+"Split current frame in n columns of equal size."
+  (split-frame-eql-parts (current-group) :column amt))
+
+(defcommand (remove-split tile-group)
+    (&optional (group (current-group))
+               (frame (tile-group-current-frame group))) ()
+"Remove the specified frame in the specified group (defaults to current group,
+current frame). Windows in the frame are migrated to the frame taking up its
 space."
   (let* ((head (frame-head group frame))
          (current (tile-group-current-frame group))
@@ -981,9 +1056,10 @@ space."
 
 (defun focus-last-frame (group)
   ;; make sure the last frame still exists in the frame tree
-  (when (and (tile-group-last-frame group)
-             (find (tile-group-last-frame group) (group-frames group)))
-    (focus-frame group (tile-group-last-frame group))))
+  (let ((last-frame (tile-group-last-frame group)))
+    (when (and last-frame
+               (find last-frame (group-frames group)))
+      (focus-frame group last-frame))))
 
 (defun focus-frame-after (group frames)
   "Given a list of frames focus the next one in the list after
@@ -1159,3 +1235,37 @@ direction. The following are valid directions:
     (if tree
         (balance-frames-internal (current-group) tree)
         (message "There's only one frame."))))
+(defun unfloat-window (window group)
+  ;; maybe find the frame geometrically closest to this float?
+  (let ((frame (first (group-frames group))))
+    (change-class window 'tile-window :frame frame)
+    (setf (window-frame window) frame
+          (frame-window frame) window
+          (tile-group-current-frame group) frame)
+    (update-decoration window)
+    (sync-frame-windows group frame)))
+
+(defun float-window (window group)
+  (let ((frame (tile-group-current-frame group)))
+    (change-class window 'float-window)
+    (float-window-align window)
+    (funcall-on-node (tile-group-frame-tree group)
+                     (lambda (f) (setf (slot-value f 'window) nil))
+                     (lambda (f) (eq frame f)))))
+
+(defcommand (float-this tile-group) () ()
+  "Transforms a tile-window into a float-window"
+  (float-window (current-window) (current-group)))
+
+(defcommand (unfloat-this tile-group) () ()
+  "Transforms a float-window into a tile-window"
+  (unfloat-window (current-window) (current-group)))
+
+(defcommand flatten-floats () ()
+  "Transform all floating windows in this group to tiled windows.
+Puts all tiled windows in the first frame of the group. "
+  (let ((group (current-group)))
+    (mapc (lambda (w) 
+          (when (typep w 'float-window) 
+            (unfloat-window w group))) 
+          (head-windows group (current-head)))))

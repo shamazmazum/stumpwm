@@ -181,6 +181,7 @@ backspace or F9), return it otherwise return nil"
 predicate, an item is visible when it matches all of the regular
 expressions in USER-INPUT (multiple regexps are separated by one or
 more spaces; ARGUMENT-POP is used to split the string)."
+  (declare (ignore item-object))
   (match-all-regexps user-input item-string))
 
 (defun select-from-menu (screen table &optional (prompt "Search:")
@@ -242,6 +243,7 @@ Returns the selected element in TABLE or nil if aborted. "
                     (when prompt-line
                       (push prompt-line strings)
                       (incf highlight))
+                    (run-hook-with-args *menu-selection-hook* menu)
                     (echo-string-list screen strings highlight))
                   (multiple-value-bind (action key-seq) (read-from-keymap keymap)
                     (if action
