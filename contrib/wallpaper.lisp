@@ -8,7 +8,9 @@
 
 (defcommand choose-wallpaper ()
   ()
-  (let* ((files (cl-fad:list-directory *wallpaper-dir*))
+  (let* ((screen (current-screen))
+         (head (current-head))
+         (files (cl-fad:list-directory *wallpaper-dir*))
          (pictures (remove-if-not
                     (lambda (file)
                       (find (pathname-type file)
@@ -18,22 +20,22 @@
          (menu (mapcar (lambda (file)
                          (list (file-namestring file) file)) pictures))
          (selection (select-from-menu
-                     (current-screen)
-                     menu
+                     screen menu
                      "Select a wallpaper")))
     (if (null selection) (throw 'error "Abort."))
-    (load-wallpaper (current-screen) (second selection))
+    (load-wallpaper (second selection) screen head)
     (stumpwm.preferences:set-preference
-     (cons :wallpaper (stumpwm::screen-id (current-screen)))
+     (list :wallpaper (stumpwm::screen-id screen) (position head (screen-heads screen)))
      (second selection)
-     :test #'equal)))
+     :test #'equalp)))
 
 (defun restore-wallpapers ()
   (dolist (screen *screen-list*)
-    (let ((wallpaper (stumpwm.preferences:get-preference
-                      (cons :wallpaper (stumpwm::screen-id screen))
-                      :test #'equal)))
-      (if wallpaper (load-wallpaper screen wallpaper)))))
+    (dotimes (head-idx (length (screen-heads screen)))
+      (let ((wallpaper (stumpwm.preferences:get-preference
+                        (list :wallpaper (stumpwm::screen-id screen) head-idx)
+                        :test #'equalp)))
+        (if wallpaper (load-wallpaper wallpaper screen (nth head-idx (screen-heads screen))))))))
 
 (register-module "STUMPWM.WALLPAPER"
                  :init-fn #'restore-wallpapers)
