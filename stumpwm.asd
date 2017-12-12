@@ -43,6 +43,7 @@
                (:file "selection")
                (:file "module")
                (:file "ioloop")
+               (:file "timers")
                (:file "stumpwm")
                (:file "user")
                (:file "interactive-keymap")

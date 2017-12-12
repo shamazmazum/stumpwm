@@ -107,8 +107,10 @@
           (t
            (dformat 1 "Updating Xinerama configuration for ~S.~%" screen)
            (if new-heads
-               (progn (head-force-refresh screen new-heads) 
-                      (update-mode-lines screen))
+               (progn (head-force-refresh screen new-heads)
+                      (update-mode-lines screen)
+                      (loop for new-head in new-heads
+                         do (run-hook-with-args *new-head-hook* new-head screen)))
                (dformat 1 "Invalid configuration! ~S~%" new-heads))))))))
 
 (define-stump-event-handler :map-request (parent send-event-p window)
@@ -642,13 +644,12 @@ they should be windows. So use this function to make a window out of DRAWABLE."
               (apply eventfn event-slots))
             (xlib:display-finish-output *display*))
         ((or xlib:window-error xlib:drawable-error) (c)
-          ;; Asynchronous errors are handled in the error
-          ;; handler. Synchronous errors like trying to get the window
-          ;; hints on a deleted window are caught and ignored here. We
-          ;; do this inside the event handler so that the event is
-          ;; handled. If we catch it higher up the event will not be
-          ;; flushed from the queue and we'll get ourselves into an
-          ;; infinite loop.
+          ;; Asynchronous errors are handled in the error handler.
+          ;; Synchronous errors like trying to get the window hints on
+          ;; a deleted window are caught and ignored here. We do this
+          ;; inside the event handler so that the event is handled. If
+          ;; we catch it higher up the event will not be flushed from
+          ;; the queue and we'll get ourselves into an infinite loop.
           (dformat 4 "ignore synchronous ~a~%" c))))
     (dformat 2 "<<< ~S~%" event-key)
     t))

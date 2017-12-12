@@ -114,7 +114,8 @@
 
 (defun setup-input-window (screen prompt input)
   "Set the input window up to read input"
-  (let* ((height (font-height (screen-font screen)))
+  (let* ((height (+ (font-height (screen-font screen))
+                    (* *message-window-y-padding* 2)))
          (win (screen-input-window screen)))
     ;; Window dimensions
     (xlib:with-state (win)
@@ -125,7 +126,7 @@
     (draw-input-bucket screen prompt input)
     ;; Ready to recieve input
     
-))
+    ))
 
 (defun shutdown-input-window (screen)
   (xlib:ungrab-keyboard *display*)
@@ -243,12 +244,28 @@ match with an element of the completions."
     (let ((k (read-key-no-modifiers)))
       (keycode->character (car k) (xlib:make-state-keys (cdr k))))))
 
+(defun prompt-text-y (index font y-padding)
+  "Calculate the y position of text in a prompt."
+  (+ y-padding
+     (* (font-height font) index)
+     (font-ascent font)))
 
 (defun draw-input-bucket (screen prompt input &optional (tail "") errorp)
   "Draw to the screen's input window the contents of input."
   (let* ((gcontext (screen-message-gc screen))
          (win (screen-input-window screen))
-         (prompt-width (text-line-width (screen-font screen) prompt :translate #'translate-id))
+         (font (screen-font screen))
+         (prompt-lines (ppcre:split #\Newline prompt))
+         (prompt-lines-length (length prompt-lines))
+         (prompt-width (apply #'max
+                              (mapcar (lambda (line)
+                                        (text-line-width font
+                                                         line
+                                                         :translate #'translate-id))
+                                      prompt-lines)))
+         (prompt-offset (text-line-width font
+                                         (first (last prompt-lines))
+                                         :translate #'translate-id))
          (line-content (input-line-string input))
          (string (if (input-line-password input)
                      (make-string (length line-content) :initial-element #\*)
@@ -261,25 +278,29 @@ match with an element of the completions."
          (tail-width   (text-line-width (screen-font screen) tail   :translate #'translate-id))
          (full-string-width (+ string-width space-width))
          (pos (input-line-position input))
-         (width (+ prompt-width
-                   (max 100 (+ full-string-width space-width tail-width)))))
+         (width (max prompt-width
+                     (+ prompt-offset
+                        (max 100 (+ full-string-width space-width tail-width))))))
     (when errorp (rotatef (xlib:gcontext-background gcontext)
                           (xlib:gcontext-foreground gcontext)))
     (xlib:with-state (win)
       (xlib:with-gcontext (gcontext :foreground (xlib:gcontext-background gcontext))
         (xlib:draw-rectangle win gcontext 0 0
-                           (xlib:drawable-width win)
-                           (xlib:drawable-height win) t))
+                             (xlib:drawable-width win)
+                             (xlib:drawable-height win) t))
       (setf (xlib:drawable-width win) (+ width (* *message-window-padding* 2)))
+      (setf (xlib:drawable-height win) (+ (* prompt-lines-length (font-height font))
+                                          (* *message-window-y-padding* 2)))
       (setup-win-gravity screen win *input-window-gravity*))
     (xlib:with-state (win)
-      (draw-image-glyphs win gcontext (screen-font screen)
-                         *message-window-padding*
-                         (font-ascent (screen-font screen))
-                         prompt
-                         :translate #'translate-id
-                         :size 16)
-      (loop with x = (+ *message-window-padding* prompt-width)
+      (loop for i from 0 below prompt-lines-length
+         do (draw-image-glyphs win gcontext font
+                               *message-window-padding*
+                               (prompt-text-y i font *message-window-y-padding*)
+                               (nth i prompt-lines)
+                               :translate #'translate-id
+                               :size 16))
+      (loop with x = (+ *message-window-padding* prompt-offset)
             for char across string
             for i from 0 below (length string)
             for char-width = (text-line-width (screen-font screen) (string char) :translate #'translate-id)
@@ -288,14 +309,18 @@ match with an element of the completions."
                                                :background (xlib:gcontext-foreground gcontext))
                    (draw-image-glyphs win gcontext (screen-font screen)
                                       x
-                                      (font-ascent (screen-font screen))
+                                      (prompt-text-y (1- prompt-lines-length)
+                                                     font
+                                                     *message-window-y-padding*)
                                       (string char)
                                       :translate #'translate-id
                                       :size 16))
             else
               do (draw-image-glyphs win gcontext (screen-font screen)
                                     x
-                                    (font-ascent (screen-font screen))
+                                    (prompt-text-y (1- prompt-lines-length)
+                                                   font
+                                                   *message-window-y-padding*)
                                     (string char)
                                     :translate #'translate-id
                                     :size 16)
@@ -306,16 +331,20 @@ match with an element of the completions."
                                                     :background (xlib:gcontext-foreground gcontext))
                         (draw-image-glyphs win gcontext (screen-font screen)
                                            x
-                                           (font-ascent (screen-font screen))
+                                           (prompt-text-y (1- prompt-lines-length)
+                                                          font
+                                                          *message-window-y-padding*)
                                            " "
                                            :translate #'translate-id
                                            :size 16))))
-         (draw-image-glyphs win gcontext (screen-font screen)
-                            (+ *message-window-padding* prompt-width full-string-width space-width)
-                            (font-ascent (screen-font screen))
-                            tail
-                            :translate #'translate-id
-                            :size 16))
+      (draw-image-glyphs win gcontext (screen-font screen)
+                         (+ *message-window-padding* prompt-offset full-string-width space-width)
+                         (prompt-text-y (1- prompt-lines-length)
+                                        font
+                                        *message-window-y-padding*)
+                         tail
+                         :translate #'translate-id
+                         :size 16))
     (when errorp
       (sleep 0.05)
       (rotatef (xlib:gcontext-background gcontext)
