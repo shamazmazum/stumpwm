@@ -56,6 +56,7 @@
                (:file "color")
                (:file "wse")
                (:file "wallpaper")
-	       ;; keep this last so it always gets recompiled if
-	       ;; anything changes
-	       (:file "version")))
+               (:file "dynamic-window")
+               ;; keep this last so it always gets recompiled if
+               ;; anything changes
+               (:file "version")))
