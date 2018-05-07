@@ -16,12 +16,12 @@
 (defun update-bindings ()
   "Defines launcher commands and key bindings"
   (loop for binding in *app-list* do
-       (destructuring-bind (key . prog-name) binding
+       (destructuring-bind (key name &optional command) binding
          (let ((command-name (concat "LAUNCH-"
-                                     (string-upcase prog-name))))
+                                     (string-upcase name))))
            (let ((symbol (intern command-name))
                  (caller #'(lambda ()
-                             (run-shell-command prog-name))))
+                             (run-shell-command (or command name)))))
              (setf (symbol-function symbol) caller
                    (gethash symbol stumpwm::*command-hash*)
                    (stumpwm::make-command :name symbol :class t)))
@@ -33,12 +33,15 @@
   (update-bindings))
 
 ;; Example:
-;; (set-app-list '(("g" . "gimp") ("m" . "midori")))
+;; (set-app-list
+;;   '(("g" "gimp")
+;;     ("i" "iridium" "iridium --incognito")))
 
 (defcommand launcher-menu () ()
   "Show laucher menu"
   (let* ((options (mapcar (lambda (app)
-                            (destructuring-bind (binding . app-name) app
+                            (destructuring-bind (binding app-name &rest skip) app
+                              (declare (ignore skip))
                               (list (concat binding " - " app-name)
                                     (concat "launch-" app-name))))
                           *app-list*))
