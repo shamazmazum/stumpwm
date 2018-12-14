@@ -259,7 +259,8 @@
                 (> y (+ (xlib:drawable-height xwin)
                         (xlib:drawable-y xwin)))
                 (intersection (slot-value *modifiers*
-                                          (find-symbol (symbol-name *float-window-modifier*)))
+                                          (find-symbol (symbol-name *float-window-modifier*)
+                                                       (find-package '#:stumpwm)))
                               (xlib:make-state-keys state-mask)))
         (when (find :button-1 (xlib:make-state-keys state-mask))
           (let* ((current-time (/ (get-internal-real-time)
