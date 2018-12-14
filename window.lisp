@@ -284,13 +284,11 @@ _NET_WM_STATE_DEMANDS_ATTENTION set"
 ;;      (xlib:clear-area (window-parent window)))))
 (defun escape-caret (str)
   "Escape carets by doubling them"
-  (let (buf)
-    (map nil #'(lambda (ch)
-                 (push ch buf)
-                 (when (char= ch #\^)
-                   (push #\^ buf)))
-         str)
-    (coerce (reverse buf) 'string)))
+  (coerce (loop :for char :across str
+                :collect char
+                :when (char= char #\^)
+                  :collect char)
+          'string))
 
 (defun get-normalized-normal-hints (xwin)
   (macrolet ((validate-hint (fn)
@@ -314,14 +312,13 @@ _NET_WM_STATE_DEMANDS_ATTENTION set"
 
 (defun xwin-net-wm-name (win)
   "Return the netwm wm name"
-  (let ((name (xlib:get-property win :_NET_WM_NAME)))
-    (when name
-      (utf8-to-string name))))
+  (when-let ((name (xlib:get-property win :_NET_WM_NAME)))
+    (utf8-to-string name)))
 
 (defun xwin-name (win)
-  (escape-caret (or
-                 (xwin-net-wm-name win)
-                 (xlib:wm-name win))))
+  (escape-caret (or (xwin-net-wm-name win)
+                    (xlib:wm-name win)
+                    "")))
 
 (defun update-configuration (win)
   ;; Send a synthetic configure-notify event so that the window
@@ -671,7 +668,7 @@ and bottom_end_x."
     (setf (window-state w) +normal-state+)
     (xwin-hide w)))
 
-(defun xwin-grab-keys (win group)
+(defun xwin-grab-key (w key)
   (labels ((add-shift-modifier (key)
              ;; don't butcher the caller's structure
              (let ((key (copy-structure key)))
@@ -679,38 +676,39 @@ and bottom_end_x."
                key))
            (key-modifiers-exist-p (key)
              (and
-               (or (not (key-meta key)) (modifiers-meta *modifiers*))
-               (or (not (key-alt key)) (modifiers-alt *modifiers*))
-               (or (not (key-hyper key)) (modifiers-hyper *modifiers*))
-               (or (not (key-super key)) (modifiers-super *modifiers*))))
-           (grabit (w key)
-             (loop for code in (multiple-value-list (xlib:keysym->keycodes *display* (key-keysym key)))
-               ;; some keysyms aren't mapped to keycodes so just ignore them.
-               when (and code (key-modifiers-exist-p key))
-               do
-                 ;; Some keysyms, such as upper case letters, need the
-                 ;; shift modifier to be set in order to grab properly.
-                 (let ((key
-                         (if (and (not (eql (key-keysym key) (xlib:keycode->keysym *display* code 0)))
-                                  (eql (key-keysym key) (xlib:keycode->keysym *display* code 1)))
-                           (add-shift-modifier key)
-                           key)))
-                   (xlib:grab-key w code
-                                  :modifiers (x11-mods key) :owner-p t
-                                  :sync-pointer-p nil :sync-keyboard-p nil)
-                   ;; Ignore capslock and numlock by also grabbing the
-                   ;; keycombos with them on.
-                   (xlib:grab-key w code :modifiers (x11-mods key nil t) :owner-p t
-                                  :sync-keyboard-p nil :sync-keyboard-p nil)
-                   (when (modifiers-numlock *modifiers*)
-                     (xlib:grab-key w code
-                                    :modifiers (x11-mods key t nil) :owner-p t
-                                    :sync-pointer-p nil :sync-keyboard-p nil)
-                     (xlib:grab-key w code :modifiers (x11-mods key t t) :owner-p t
-                                    :sync-keyboard-p nil :sync-keyboard-p nil))))))
-    (dolist (map (dereference-kmaps (top-maps group)))
-      (dolist (i (kmap-bindings map))
-        (grabit win (binding-key i))))))
+              (or (not (key-meta key)) (modifiers-meta *modifiers*))
+              (or (not (key-alt key)) (modifiers-alt *modifiers*))
+              (or (not (key-hyper key)) (modifiers-hyper *modifiers*))
+              (or (not (key-super key)) (modifiers-super *modifiers*)))))
+    (loop for code in (multiple-value-list (xlib:keysym->keycodes *display* (key-keysym key)))
+       ;; some keysyms aren't mapped to keycodes so just ignore them.
+       when (and code (key-modifiers-exist-p key))
+       do
+       ;; Some keysyms, such as upper case letters, need the
+       ;; shift modifier to be set in order to grab properly.
+         (let ((key
+                (if (and (not (eql (key-keysym key) (xlib:keycode->keysym *display* code 0)))
+                         (eql (key-keysym key) (xlib:keycode->keysym *display* code 1)))
+                    (add-shift-modifier key)
+                    key)))
+           (xlib:grab-key w code
+                          :modifiers (x11-mods key) :owner-p t
+                          :sync-pointer-p nil :sync-keyboard-p nil)
+           ;; Ignore capslock and numlock by also grabbing the
+           ;; keycombos with them on.
+           (xlib:grab-key w code :modifiers (x11-mods key nil t) :owner-p t
+                          :sync-keyboard-p nil :sync-keyboard-p nil)
+           (when (modifiers-numlock *modifiers*)
+             (xlib:grab-key w code
+                            :modifiers (x11-mods key t nil) :owner-p t
+                            :sync-pointer-p nil :sync-keyboard-p nil)
+             (xlib:grab-key w code :modifiers (x11-mods key t t) :owner-p t
+                            :sync-keyboard-p nil :sync-keyboard-p nil))))))
+
+(defun xwin-grab-keys (win group)
+  (dolist (map (dereference-kmaps (top-maps group)))
+    (dolist (i (kmap-bindings map))
+      (xwin-grab-key win (binding-key i)))))
 
 (defun grab-keys-on-window (win)
   (xwin-grab-keys (window-xwin win) (window-group win)))
@@ -1026,7 +1024,7 @@ window. Default to the current window. if
 (defun kill-windows (windows)
   "Kill all windows @var{windows}"
   (dolist (window windows)
-    (xwin-kill (window-xwin window)))) 
+    (xwin-kill (window-xwin window))))
 
 (defun kill-windows-in-group (group)
    "Kill all windows in group @var{group}"

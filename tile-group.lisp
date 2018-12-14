@@ -83,9 +83,9 @@
           (setf (tile-group-current-frame group) frame
                 (frame-window frame) nil))
         (sync-frame-windows group (window-frame window))
-        ;; maybe show the window in its new frame
         (when (null (frame-window (window-frame window)))
-          (really-raise-window window)))))
+          (frame-raise-window (window-group window) (window-frame window)
+                              window nil)))))
 
 (defmethod group-current-head ((group tile-group))
   (if-let ((current-window (group-current-window group)))
@@ -143,11 +143,10 @@
 
 (defmethod group-button-press ((group tile-group) x y (where (eql :root)))
   (when *root-click-focuses-frame*
-    (let* ((frame (find-frame group x y)))
-      (when frame
-        (focus-frame group frame)
-        (unless (eq *mouse-focus-policy* :click)
-          (update-all-mode-lines))))))
+    (when-let ((frame (find-frame group x y)))
+      (focus-frame group frame)
+      (unless (eq *mouse-focus-policy* :click)
+        (update-all-mode-lines)))))
 
 (defmethod group-button-press ((group tile-group) x y (where window))
   (declare (ignore x y))
@@ -240,9 +239,9 @@
            (fwx (+ fx (frame-width f)))
            (fhy (+ fy (frame-height f))))
       (when (and
-             (>= y fy) (<= y fhy)
-             (>= x fx) (<= x fwx)
-             (return f))))))
+             (<= fy y fhy)
+             (<= fx x fwx))
+        (return f)))))
 
 
 (defun frame-set-x (frame v)
@@ -784,28 +783,68 @@ either :width or :height"
                             (sync-frame-windows group leaf)))))))))
 
 (defun balance-frames-internal (group tree)
-  "Resize all the children of tree to be of equal width or height
-depending on the tree's split direction."
-  (let* ((split-type (tree-split-type tree))
-         (fn (if (eq split-type :column)
-                 'tree-width
-                 'tree-height))
-         (side (if (eq split-type :column)
-                   :right
-                   :bottom))
-         (total (funcall fn tree)))
-    (multiple-value-bind (size rem)
-      (truncate total (length tree))
-      (loop
-        for i in tree
-        for j = rem then (1- j)
-        for totalofs = 0 then (+ totalofs ofs)
-        for ofs = (+ (- size (funcall fn i)) (if (plusp j) 1 0))
-        do
-           (expand-tree i ofs side)
-           (offset-tree-dir i totalofs side)
-           (tree-iterate i (lambda (leaf)
-                             (sync-frame-windows group leaf)))))))
+  "Fully balance all the frames contained in tree."
+  (labels
+      ((balance (tree x y width height)
+         (etypecase tree
+           (frame (balance-frame tree x y width height))
+           (list (balance-tree tree x y width height))))
+       (balance-frame (frame x y width height)
+         (setf (frame-x frame) x
+               (frame-y frame) y
+               (frame-width frame) width
+               (frame-height frame) height)
+         (sync-frame-windows group frame))
+       (count-splits (tree split-type)
+         "Count the number of top-level splits of split-type in tree."
+         (cond ((frame-p tree) 1)
+               ((eql split-type (tree-split-type tree))
+                (+ (count-splits (first tree) split-type)
+                   (count-splits (second tree) split-type)))
+               (t 1)))
+       (divide-dimension (value first-splits second-splits)
+         "Divide a width or height between two sides of a binary tree.
+
+         Returns two values: the number of pixels to give to the first and
+         second child, respectively.
+
+         For example: (divide-dimension 500 3 2) will divide 500 pixels into 300
+         for the first 3 splits and 200 for the second 2 splits.
+
+         "
+         ;; First divide the two groups as evenly as possible.
+         (multiple-value-bind (base remainder)
+             (truncate value (+ first-splits second-splits))
+           ;; We may have up to TOTAL-1 pixels left.  Divide those evenly
+           ;; between the two sides.  If there's 1 odd pixel left just give it
+           ;; to the first side.
+           (multiple-value-bind (extra maybe-one-extra)
+               (truncate remainder 2)
+             (values (+ (* base first-splits) extra maybe-one-extra)
+                     (+ (* base second-splits) extra)))))
+       (balance-tree (tree x y width height)
+         "Balance the binary tree to fit the given dimensions."
+         (let* ((split-type (tree-split-type tree))
+                (first-splits (count-splits (first tree) split-type))
+                (second-splits (count-splits (second tree) split-type)))
+           (ecase split-type
+             (:row (multiple-value-bind (top-height bottom-height)
+                       (divide-dimension height first-splits second-splits)
+                     (balance (first tree)
+                              x y
+                              width top-height)
+                     (balance (second tree)
+                              x (+ y top-height)
+                              width bottom-height)))
+             (:column (multiple-value-bind (left-width right-width)
+                          (divide-dimension width first-splits second-splits)
+                        (balance (first tree)
+                                 x y
+                                 left-width height)
+                        (balance (second tree)
+                                 (+ x left-width) y
+                                 right-width height)))))))
+    (balance tree (tree-x tree) (tree-y tree) (tree-width tree) (tree-height tree))))
 
 (defun split-frame (group how &optional (ratio 1/2))
   "Split the current frame into 2 frames. Return new frame number, if
@@ -829,7 +868,7 @@ desktop when starting."
               (if (atom (tile-group-frame-head group head))
                   (list f1 f2)
                   (funcall-on-node (tile-group-frame-head group head)
-                                   (lambda (tree)     
+                                   (lambda (tree)
                                      (substitute (list f1 f2) frame tree))
                                    (lambda (tree)
                                      (unless (atom tree)
@@ -846,6 +885,8 @@ desktop when starting."
         (when (frame-window f2)
           (unhide-window (frame-window f2)))
         (frame-number f2)))))
+
+
 
 (defun draw-frame-outline (group f tl br)
   "Draw an outline around FRAME."
@@ -1008,7 +1049,8 @@ space."
           (when (frame-window l)
             (update-decoration (frame-window l)))
           (when (eq frame current)
-            (show-frame-indicator group))))))
+            (show-frame-indicator group))
+          (run-hook-with-args *remove-split-hook* l frame)))))
 
 (defcommand-alias remove remove-split)
 
@@ -1024,10 +1066,12 @@ space."
         (progn
           (mapc (lambda (w)
                   ;; windows in other frames disappear
-                  (unless (eq (window-frame w) (tile-group-current-frame group))
+                  (unless (eq (window-frame w) 
+                              (tile-group-current-frame group))
                     (hide-window w))
                   (setf (window-frame w) frame))
-                (head-windows group head))
+                (remove-if (lambda (w) (typep w 'float-window))
+                           (head-windows group head)))
           (setf (frame-window frame) win
                 (tile-group-frame-head group head) frame
                 (tile-group-current-frame group) frame)
@@ -1078,6 +1122,10 @@ the current frame."
 "Cycle through the frame tree to the next frame."
   (focus-next-frame (current-group)))
 
+(defcommand (fprev tile-group) () ()
+  "Cycle through the frame tree to the previous frame."
+  (focus-prev-frame (current-group)))
+
 (defcommand (sibling tile-group) () ()
 "Jump to the frame's sibling. If a frame is split into two frames,
 these two frames are siblings."
@@ -1090,23 +1138,41 @@ these two frames are siblings."
 (defun choose-frame-by-number (group)
   "show a number in the corner of each frame and wait for the user to
 select one. Returns the selected frame or nil if aborted."
-  (let* ((wins (progn
-                 (draw-frame-outlines group)
-                 (draw-frame-numbers group)))
-         (ch (read-one-char (group-screen group)))
-         (num (read-from-string (string ch) nil nil)))
-    (dformat 3 "read ~S ~S~%" ch num)
-    (mapc #'xlib:destroy-window wins)
-    (clear-frame-outlines group)
-    (find ch (group-frames group)
-          :test 'char=
-          :key 'get-frame-number-translation)))
+  (let ((wins (progn
+                (draw-frame-outlines group)
+                (draw-frame-numbers group))))
+    (multiple-value-bind (has-click ch x y)
+        (read-one-char-or-click group)
+      (if has-click
+          (let ((winner))
+            (mapc #'xlib:destroy-window wins)
+            (clear-frame-outlines group)
+            ;; frame-width and frame-height are not updated in this
+            ;; context, so we need to loop through all of them until
+            ;; we find the most satisfying one.
+            (dolist (f (group-frames group))
+              (when (and (> x (frame-x f)) (> y (frame-y f)))
+                (if winner
+                    (when (or (> (frame-x f) (frame-x winner))
+                              (> (frame-y f) (frame-y winner)))
+                      (setf winner f))
+                    (setf winner f))))
+            (ungrab-pointer)
+            winner)
+          (when ch
+            (let ((num (read-from-string (string ch) nil nil)))
+              (dformat 3 "read ~S ~S~%" ch num)
+              (mapc #'xlib:destroy-window wins)
+              (clear-frame-outlines group)
+              (find ch (group-frames group)
+                    :test 'char=
+                    :key 'get-frame-number-translation)))))))
 
 
 (defcommand (fselect tile-group) (frame-number) ((:frame t))
 "Display a number in the corner of each frame and let the user to
-select a frame by number. If @var{frame-number} is specified, just
-jump to that frame."
+select a frame by number or click. If @var{frame-number} is specified,
+just jump to that frame."
   (let ((group (current-group)))
     (focus-frame group frame-number)))
 
@@ -1227,10 +1293,10 @@ direction. The following are valid directions:
 
 (defcommand (balance-frames tile-group) (&aux (group (current-group))) ()
   "Make frames the same height or width in the current frame's subtree."
-  (if-let ((tree (tree-parent (tile-group-frame-head group (current-head))
-                              (tile-group-current-frame group))))
-    (balance-frames-internal group tree)
-    (message "There's only one frame.")))
+  (let ((tree (tile-group-frame-head group (current-head))))
+    (if (frame-p tree)
+        (message "There's only one frame.")
+        (balance-frames-internal group tree))))
 
 (defun unfloat-window (window group)
   ;; maybe find the frame geometrically closest to this float?

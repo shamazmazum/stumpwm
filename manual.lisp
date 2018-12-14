@@ -22,40 +22,19 @@
 ;;
 ;; Code:
 
-(in-package #:cl-user)
-
-#+lispworks
-(progn
-  (lw:set-default-character-element-type 'lw:simple-char)
-
-  (unless
-      (dolist (install-path
-               '("quicklisp" ".quicklisp"))
-        (let ((quicklisp-init
-                (merge-pathnames (make-pathname :directory `(:relative ,install-path)
-                                                :name "setup.lisp")
-                                 (user-homedir-pathname))))
-          (when (probe-file quicklisp-init)
-            (load quicklisp-init)
-            (return t))))
-
-    (error "Quicklisp must be installed in order to build StumpWM with ~S."
-           (lisp-implementation-type)))
-
-  (pushnew #P"./" asdf:*central-registry* :test #'equal)
-  (asdf:oos 'asdf:load-op 'stumpwm))
-
 (in-package #:stumpwm)
 
 (require :sb-introspect)
+
 ;; handy for figuring out which symbol is borking the documentation
-(defun dprint (sym)
-  (declare (ignorable sym))
-  ;;(format t "~&Doing ~a..." sym))
+(defun dprint (type sym)
+  (declare (ignorable type sym))
+  ;(format t "~&Doing ~a ~a..." type sym)
   )
 
-(ppcre:register-groups-bind (name) ("^@@@ (.*)" line)
-                              (dprint name)
+(defun generate-function-doc (s line)
+  (ppcre:register-groups-bind (name) ("^@@@ (.*)" line)
+                              (dprint 'func name)
                               (let ((fn (if (find #\( name :test 'char=)
                                             ;; handle (setf <symbol>) functions
                                             (with-standard-io-syntax
@@ -71,7 +50,7 @@
 
 (defun generate-macro-doc (s line)
   (ppcre:register-groups-bind (name) ("^%%% (.*)" line)
-                              (dprint name)
+                              (dprint 'macro name)
                               (let* ((symbol (find-symbol (string-upcase name) :stumpwm))
                                      (*print-pretty* nil))
                                 (format s "@defmac {~a} ~{~a~^ ~}~%~a~&@end defmac~%~%"
@@ -81,34 +60,24 @@
                                 t)))
 
 (defun generate-variable-doc (s line)
-  (ppcre:register-groups-bind (package-colon package name) ("^### ((.*):)?(.*)" line)
-    (declare (ignore package-colon))
-    (dprint package)
-    (dprint name)
-    (if package
-        (setf package (string-upcase package))
-        (setf package "STUMPWM"))
-    (let ((sym (find-symbol (string-upcase name) package)))
-      (format s "@defvar ~a~%~a~&@end defvar~%~%"
-              name (documentation sym 'variable))
-      t)))
+  (ppcre:register-groups-bind (name) ("^### (.*)" line)
+                              (dprint 'var name)
+                              (let ((sym (find-symbol (string-upcase name) :stumpwm)))
+                                (format s "@defvar ~a~%~a~&@end defvar~%~%"
+                                        name (documentation sym 'variable))
+                                t)))
 
 (defun generate-hook-doc (s line)
-  (ppcre:register-groups-bind (package-colon package name) ("^\\$\\$\\$ ((.*):)?(.*)" line)
-    (declare (ignore package-colon))
-    (dprint package)
-    (dprint name)
-    (if package
-        (setf package (string-upcase package))
-        (setf package "STUMPWM"))
-    (let ((sym (find-symbol (string-upcase name) package)))
-      (format s "@defvr {Hook} ~a~%~a~&@end defvr~%~%"
-              name (documentation sym 'variable))
-      t)))
+  (ppcre:register-groups-bind (name) ("^\\$\\$\\$ (.*)" line)
+                              (dprint 'hook name)
+                              (let ((sym (find-symbol (string-upcase name) :stumpwm)))
+                                (format s "@defvr {Hook} ~a~%~a~&@end defvr~%~%"
+                                        name (documentation sym 'variable))
+                                t)))
 
 (defun generate-command-doc (s line)
   (ppcre:register-groups-bind (name) ("^!!! (.*)" line)
-    (dprint name)
+    (dprint 'cmd name)
     (if-let (symbol (find-symbol (string-upcase name) :stumpwm))
       (let ((cmd (symbol-function symbol))
             (*print-pretty* nil))

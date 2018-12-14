@@ -231,29 +231,43 @@ The Caller is responsible for setting up the input focus."
       when (typep group (first i))
       collect (second i))))
 
+(defvar *current-key-seq* nil
+  "The sequence of keys which were used to invoke a command, available
+  within a command definition as a dynamic var binding. Commands may
+  dispatch further based on the value in *current-key-seq*. See the
+  REMAP-KEYS contrib module for a working use case.")
+
+(defvar *custom-key-event-handler* nil
+  "A custom key event handler can be set in this variable,
+  which will take precedence over the keymap based handler defined in
+  the default :KEY-PRESS event handler.")
+
 (define-stump-event-handler :key-press (code state #|window|#)
   (labels ((get-cmd (code state)
              (with-focus (screen-key-window (current-screen))
                (handle-keymap (top-maps) code state nil t nil))))
     (unwind-protect
-         ;; modifiers can sneak in with a race condition. so avoid that.
-         (unless (is-modifier code)
-           (multiple-value-bind (cmd key-seq) (get-cmd code state)
-             (cond
-               ((eq cmd t))
-               (cmd
-                (unmap-message-window (current-screen))
-                (eval-command cmd t) t)
-               (t (message "~{~a ~}not bound." (mapcar 'print-key (nreverse key-seq))))))))))
+         (or (and *custom-key-event-handler*
+                  (funcall *custom-key-event-handler* code state))
+             ;; modifiers can sneak in with a race condition. so avoid that.
+             (unless (is-modifier code)
+               (multiple-value-bind (cmd key-seq) (get-cmd code state)
+                 (cond
+                   ((eq cmd t))
+                   (cmd
+                    (unmap-message-window (current-screen))
+                    (let ((*current-key-seq* key-seq))
+                      (eval-command cmd t))
+                    t)
+                   (t (message "~{~a ~}not bound." (mapcar 'print-key (nreverse key-seq)))))))))))
 
 (defun bytes-to-window (bytes)
-  "A sick hack to assemble 4 bytes into a 32 bit number. This is
-because ratpoison sends the rp_command_request window in 8 byte
-chunks."
-  (+ (first bytes)
-     (ash (second bytes) 8)
-     (ash (third bytes) 16)
-     (ash (fourth bytes) 24)))
+  "Combine a list of 4 8-bit bytes into a 32-bit number. This is because
+ratpoison sends the rp_command_request window in 8 byte chunks."
+  (logior (first bytes)
+          (ash (second bytes) 8)
+          (ash (third bytes) 16)
+          (ash (fourth bytes) 24)))
 
 (defun handle-rp-commands (root)
   "Handle a ratpoison style command request."
@@ -603,8 +617,9 @@ the window in it's frame."
 (defun make-xlib-window (drawable)
   "For some reason the CLX xid cache screws up returns pixmaps when
 they should be windows. So use this function to make a window out of DRAWABLE."
-  (xlib::make-window :id (xlib:drawable-id drawable)
-                     :display *display*))
+  (make-instance 'xlib:window
+                 :id (xlib:drawable-id drawable)
+                 :display *display*))
 
 (defun handle-event (&rest event-slots &key display event-key &allow-other-keys)
   (declare (ignore display))

@@ -111,8 +111,7 @@ your X server and CLX implementation support XTEST."
 filename. @var{path} is by default the @env{PATH} evironment variable
 but can be specified. It should be a string containing each directory
 seperated by a colon."
-  (sort
-   (loop for p in path
+  (loop for p in path
          for dir = (probe-path p)
          when dir
            nconc (loop for file in (directory (merge-pathnames (make-pathname :name :wild :type :wild) dir)
@@ -121,11 +120,13 @@ seperated by a colon."
                        when (pathname-is-executable-p file)
                          collect (if full-path
                                      (namestring file)
-                                     namestring)))
-   #'string<))
+                                     namestring))))
 
 (defstruct path-cache
   programs modification-dates paths)
+
+(defvar *path-cache-lock* (sb-thread:make-mutex)
+  "A lock for accessing the *path-cache* during calls to rehash.")
 
 (defvar *path-cache* nil
   "A cache containing the programs in the path, used for completion.")
@@ -137,12 +138,13 @@ seperated by a colon."
                            (file-write-date p)))
                        paths)))
     (finish-output)
-    (unless (and *path-cache*
-                 (equal (path-cache-paths *path-cache*) paths)
-                 (equal (path-cache-modification-dates *path-cache*) dates))
-      (setf *path-cache* (make-path-cache :programs (programs-in-path nil paths)
-                                          :modification-dates dates
-                                          :paths paths)))))
+    (sb-thread:with-mutex (*path-cache-lock*)
+      (unless (and *path-cache*
+                   (equal (path-cache-paths *path-cache*) paths)
+                   (equal (path-cache-modification-dates *path-cache*) dates))
+        (setf *path-cache* (make-path-cache :programs (programs-in-path nil paths)
+                                            :modification-dates dates
+                                            :paths paths))))))
 
 (defun complete-program (base)
   "return the list of programs in @var{*path-cache*} whose names begin
@@ -152,7 +154,8 @@ with base. Automagically update the cache."
                      (when (<= (length base) (length p))
                        (string= base p
                                 :end1 (length base)
-                                :end2 (length base)))) (path-cache-programs *path-cache*)))
+                                :end2 (length base)))) 
+                 (path-cache-programs *path-cache*)))
 
 (defcommand run-shell-command (cmd &optional collect-output-p) ((:shell "/bin/sh -c "))
   "Run the specified shell command. If @var{collect-output-p} is @code{T}

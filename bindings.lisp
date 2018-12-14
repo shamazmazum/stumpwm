@@ -58,9 +58,14 @@ the list (inactive maps being skipped). In general the order should go
 from most specific groups to most general groups.")
 
 (defvar *group-top-map* nil)
-(defvar *group-root-map* nil)
+(defvar *group-root-map* nil
+  "Commands specific to a group context hang from this keymap.
+It is available as part of the @dnf{prefix map}.")
 (defvar *tile-group-top-map* nil)
-(defvar *tile-group-root-map* nil)
+(defvar *tile-group-root-map* nil
+  "Commands specific to a tile-group context hang from this keymap.
+It is available as part of the @dnf{prefix map} when the active group
+is a tile group.")
 
 ;; Do it this way so its easier to wipe the map and get a clean one.
 (defmacro fill-keymap (map &rest bindings)
@@ -151,6 +156,7 @@ from most specific groups to most general groups.")
   (kbd "C-p")     "pull-hidden-previous"
   (kbd "M-p")     "prev"
   (kbd "C-M-p")   "prev-in-frame"
+  (kbd "P")       "place-current-window"
   (kbd "W")       "place-existing-windows"
   *escape-key*     "pull-hidden-other"
   (kbd "M-t")     "other-in-frame"
