@@ -87,7 +87,8 @@ and complete the input by mutating it."))
           (progn
             (let ((elt (nth idx completions)))
               (input-delete-region input 0 (input-point input))
-              (input-insert-string input (if (listp elt) (first elt) elt)))
+              (input-insert-string input (if (listp elt) (first elt) elt))
+              (input-insert-char input #\Space))
             ;; Prepare the next completion
             (setf idx (mod (+ idx (if (eq direction :forward) 1 -1)) completion-count))
           :error)))))
@@ -157,6 +158,9 @@ and complete the input by mutating it."))
 (defvar *input-history* nil
   "History for the input line.")
 
+(defvar *input-shell-history* nil
+  "History for shell lines.")
+
 (defvar *input-last-command* nil
   "The last input command.")
 
@@ -205,14 +209,11 @@ Available completion styles include
       (setf (xlib:window-priority win) :above
             (xlib:drawable-height win) height))
     (xlib:map-window win)
-    ;; Draw the prompt
-    (draw-input-bucket screen prompt input)
-    ;; Ready to recieve input
-    ))
+    (draw-input-bucket screen prompt input)))
 
 (defun shutdown-input-window (screen)
-  (xlib:ungrab-keyboard *display*)
   (xlib:unmap-window (screen-input-window screen)))
+
 ;; Hack to avoid clobbering input from numpads with numlock on.
 (defun input-handle-key-press-event (&rest event-slots
                                      &key event-key code state
@@ -376,12 +377,8 @@ match with an element of the completions."
          (font (screen-font screen))
          (prompt-lines (ppcre:split #\Newline prompt))
          (prompt-lines-length (length prompt-lines))
-         (prompt-width (apply #'max
-                              (mapcar (lambda (line)
-                                        (text-line-width font
-                                                         line
-                                                         :translate #'translate-id))
-                                      prompt-lines)))
+         (prompt-width (loop :for line :in prompt-lines
+                             :maximize (text-line-width font line :translate #'translate-id)))
          (prompt-offset (text-line-width font
                                          (first (last prompt-lines))
                                          :translate #'translate-id))
@@ -755,21 +752,14 @@ input (pressing Return), nil otherwise."
        nil))))
 
 (defun all-modifier-codes ()
-  (multiple-value-bind
-        (shift-codes lock-codes control-codes mod1-codes mod2-codes mod3-codes mod4-codes mod5-codes)
-      (xlib:modifier-mapping *display*)
-    (append shift-codes
-            lock-codes
-            control-codes
-            mod1-codes
-            mod2-codes
-            mod3-codes
-            mod4-codes
-            mod5-codes)))
+  "Return all the keycodes that are associated with a modifier."
+  (flatten (multiple-value-list (xlib:modifier-mapping *display*))))
 
 (defun get-modifier-map ()
   (labels ((find-mod (mod codes)
-             (find (xlib:keysym->keycodes *display* (keysym-name->keysym mod)) codes)))
+             (let* ((keysym (keysym-name->keysym mod))
+                    (keycodes (multiple-value-list (xlib:keysym->keycodes *display* keysym))))
+               (intersection keycodes codes))))
     (let ((modifiers (make-modifiers)))
       (multiple-value-bind
             (shift-codes lock-codes control-codes mod1-codes mod2-codes mod3-codes mod4-codes mod5-codes)
@@ -843,10 +833,12 @@ user presses 'y'"
 (defun yes-or-no-p (message)
   "ask a \"yes or no\" question on the current screen and return T if the
 user presses 'yes'"
-  (loop for line = (read-one-line (current-screen)
-                                  (format nil "~a(yes or no) " message)
-                                  :completions
-                                  '("yes" "no"))
+  (loop for line = (string-trim
+                    '(#\Space)
+                    (read-one-line (current-screen)
+                                   (format nil "~a(yes or no) " message)
+                                   :completions
+                                   '("yes" "no")))
         until (find line '("yes" "no") :test 'string-equal)
         do (message "Please answer yes or no")
            (sleep 1)

@@ -37,11 +37,21 @@ like xterm and emacs.")
      (maximize-window window))))
 
 (defmethod window-visible-p ((window tile-window))
-  ;; In this case, visible means the window is the top window in the
-  ;; frame. This is not entirely true when it doesn't take up the
-  ;; entire frame and there's a window below it.
-  (eq window
-      (frame-window (window-frame window))))
+  ;; A TILE-WINDOW is visible is it is the top window in the frame or when the
+  ;; focused window is a FLOAT-WINDOW and the TILE-WINDOW can be seen below.
+  (let* ((frame (window-frame window))
+         (frame-windows (frame-windows (window-group window) frame)))
+    (flet ((full-frame-p (win)
+             (not (and (window-normal-hints win)
+                       (xlib:wm-size-hints-x (window-normal-hints win))
+                       (xlib:wm-size-hints-y (window-normal-hints win))))))
+      (or (eq window (or (frame-window frame)
+                         (first frame-windows)))
+          (when (> (length frame-windows) 1)
+            (loop :for (current-window next-window) :on frame-windows
+                  :until (full-frame-p current-window)
+                  :when (eq window next-window)
+                    :do (return t)))))))
 
 (defmethod window-head ((window tile-window))
   (frame-head (window-group window) (window-frame window)))
@@ -104,12 +114,15 @@ than the root window's width and height."
     (cond
       ;; handle specially fullscreen windows.
       ((window-fullscreen win)
-       (let ((head (frame-head (window-group win) f)))
+       (let* ((win-group (window-group win))
+              (head (frame-head win-group f)))
          (setf x (frame-x head)
                y (frame-y head)
                width (frame-width head)
                height (frame-height head)
-               (xlib:window-priority (window-parent win)) :above))
+               (xlib:window-priority (window-parent win)
+                                     (window-parent (group-raised-window win-group))) :above
+               (group-raised-window (window-group win)) win))
        (return-from geometry-hints (values x y 0 0 width height 0 t)))
       ;; Adjust the defaults if the window is a transient_for window.
       ((find (window-type win) '(:transient :dialog))
@@ -208,28 +221,6 @@ than the root window's width and height."
 (defun only-tile-windows (windows)
   (remove-if-not (lambda (w) (typep w 'tile-window))
                  windows))
-
-(defun focus-next-window (group)
-  (focus-forward group (only-tile-windows (sort-windows group))))
-
-(defun focus-prev-window (group)
-  (focus-forward group
-                 (reverse
-                  (only-tile-windows (sort-windows group)))))
-
-(defcommand (next tile-group) () ()
-  "Go to the next window in the window list."
-  (let ((group (current-group)))
-    (if (group-current-window group)
-        (focus-next-window group)
-        (other-window group))))
-
-(defcommand (prev tile-group) () ()
-  "Go to the previous window in the window list."
-  (let ((group (current-group)))
-    (if (group-current-window group)
-        (focus-prev-window group)
-        (other-window group))))
 
 (defun pull-window (win &optional (to-frame (tile-group-current-frame (window-group win))) (focus-p t))
   (let ((f (window-frame win))
@@ -369,12 +360,6 @@ when selecting another window."
                                                    (tile-group-current-frame (current-group)))))
 
 (defcommand-alias frame-windows echo-frame-windows)
-
-(defcommand (fullscreen tile-group) () ()
-  "Toggle the fullscreen mode of the current widnow. Use this for clients
-with broken (non-NETWM) fullscreen implementations, such as any program
-using SDL."
-  (update-fullscreen (current-window) 2))
 
 (defcommand (gravity tile-group) (gravity) ((:gravity "Gravity: "))
   "Set a window's gravity within its frame. Gravity controls where the

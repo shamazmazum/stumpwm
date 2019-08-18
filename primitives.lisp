@@ -33,10 +33,12 @@
           *frame-indicator-text*
           *frame-indicator-timer*
           *message-window-timer*
+          *hooks-enabled-p*
           *command-mode-start-hook*
           *command-mode-end-hook*
           *urgent-window-hook*
           *new-window-hook*
+          *new-head-hook*
           *destroy-window-hook*
           *focus-window-hook*
           *place-window-hook*
@@ -312,6 +314,12 @@ sequence it is a part of, and command value bound to the key.")
 window. Called with 4 arguments, the screen containing the root
 window, the button clicked, and the x and y of the pointer.")
 
+(defvar *click-hook* '()
+  "A hook called whenever there is a mouse click.
+Called with 4 arguments, the screen containing the
+window (or nil if there isn't one), the button clicked,
+and the x and y of the pointer.")
+
 (defvar *new-mode-line-hook* '()
   "Called whenever the mode-line is created. It is called with argument,
 the mode-line")
@@ -536,7 +544,8 @@ Use the window's resource name.
   height
   window)
 
-(defstruct (head (:include frame)))
+(defstruct (head (:include frame))
+  (name "" :type string))
 
 (defclass screen ()
   ((id :initarg :id :reader screen-id)
@@ -647,7 +656,7 @@ exist, in which case they go into the current group.")
 (defvar *group-number-map* "1234567890"
   "Set this to a string to remap the group numbers to something more convenient.")
 
-(defvar *frame-number-map* "0123456789abcdefghijklmnopqrstuvxwyz"
+(defvar *frame-number-map* "0123456789abcdefghijklmnopqrstuvwxyz"
   "Set this to a string to remap the frame numbers to more convenient keys.
 For instance,
 
@@ -717,16 +726,19 @@ chosen, resignal the error."
        ,@body)))
 
 ;;; Hook functionality
+(defvar *hooks-enabled-p* t
+  "Controls whether hooks will actually run or not")
 
 (defun run-hook-with-args (hook &rest args)
   "Call each function in HOOK and pass args to it."
-  (handler-case
-      (with-simple-restart (abort-hooks "Abort running the remaining hooks.")
-        (with-restarts-menu
+  (when *hooks-enabled-p*
+    (handler-case
+        (with-simple-restart (abort-hooks "Abort running the remaining hooks.")
+          (with-restarts-menu
             (dolist (fn hook)
               (with-simple-restart (continue-hooks "Continue running the remaining hooks.")
                 (apply fn args)))))
-    (t (c) (message "^B^1*Error on hook ^b~S^B!~% ^n~A" hook c) (values nil c))))
+      (t (c) (message "^B^1*Error on hook ^b~S^B!~% ^n~A" hook c) (values nil c)))))
 
 (defun run-hook (hook)
   "Call each function in HOOK."

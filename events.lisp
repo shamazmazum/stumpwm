@@ -45,12 +45,12 @@
 
 ;;; Configure request
 
-(flet ((has-x (mask) (= 1 (logand mask 1)))
-       (has-y (mask) (= 2 (logand mask 2)))
-       (has-w (mask) (= 4 (logand mask 4)))
-       (has-h (mask) (= 8 (logand mask 8)))
-       (has-bw (mask) (= 16 (logand mask 16)))
-       (has-stackmode (mask) (= 64 (logand mask 64))))
+(flet ((has-x (mask) (logbitp 0 mask))
+       (has-y (mask) (logbitp 1 mask))
+       (has-w (mask) (logbitp 2 mask))
+       (has-h (mask) (logbitp 3 mask))
+       (has-bw (mask) (logbitp 4 mask))
+       (has-stackmode (mask) (logbitp 6 mask)))
   (defun configure-managed-window (win x y width height stack-mode value-mask)
     ;; Grant the configure request but then maximize the window after the
     ;; granting.
@@ -103,12 +103,10 @@
         ((equalp old-heads new-heads)
          (dformat 3 "Bogus configure-notify on root window of ~S~%" screen) t)
         (t
-         (dformat 1 "Updating Xinerama configuration for ~S.~%" screen)
+         (dformat 1 "Updating Xrandr or Xinerama configuration for ~S.~%" screen)
          (if new-heads
              (progn (head-force-refresh screen new-heads)
-                    (update-mode-lines screen)
-                    (loop for new-head in new-heads
-                       do (run-hook-with-args *new-head-hook* new-head screen)))
+                    (update-mode-lines screen))
              (dformat 1 "Invalid configuration! ~S~%" new-heads)))))))
 
 (define-stump-event-handler :map-request (parent send-event-p window)
@@ -496,9 +494,11 @@ converted to an atom is removed."
         (if (eq (window-group window) (current-group))
             (echo-string (window-screen window) (format nil "'~a' denied map request" (window-name window)))
             (echo-string (window-screen window) (format nil "'~a' denied map request in group ~a" (window-name window) (group-name (window-group window))))))
-      (frame-raise-window (window-group window) (window-frame window) window
-                          (eq (window-frame window)
-                              (tile-group-current-frame (window-group window))))))
+      (if (typep window 'tile-window)
+          (frame-raise-window (window-group window) (window-frame window) window
+                              (eq (window-frame window)
+                                  (tile-group-current-frame (window-group window))))
+          (raise-window window))))
 
 (defun maybe-raise-window (window)
   (if (deny-request-p window *deny-raise-request*)
@@ -599,18 +599,38 @@ the window in it's frame."
         (focus-all win)
         (update-all-mode-lines)))))
 
+(defun decode-button-code (code)
+  "Translate the mouse button number into a more readable format"
+  (ecase code
+    (1 :left-button)
+    (2 :middle-button)
+    (3 :right-button)
+    (4 :wheel-up)
+    (5 :wheel-down)
+    (6 :wheel-left)
+    (7 :wheel-right)
+    (8 :browser-back)
+    (9 :browser-front)))
+
+(defun scroll-button-keyword-p (button)
+  "Checks if button keyword is generated from the scroll wheel."
+  (or (eq button :wheel-down) (eq button :wheel-up)
+      (eq button :wheel-left) (eq button :wheel-right)))
+
 (define-stump-event-handler :button-press (window code x y child time)
-  (let ((screen (find-screen window))
+  (let ((button (decode-button-code code))
+        (screen (find-screen window))
         (mode-line (find-mode-line-by-window window))
         (win (find-window-by-parent window (top-windows))))
+    (run-hook-with-args *click-hook* screen code x y)
     (cond
       ((and screen (not child))
-       (group-button-press (screen-current-group screen) x y :root)
+       (group-button-press (screen-current-group screen) button x y :root)
        (run-hook-with-args *root-click-hook* screen code x y))
       (mode-line
        (run-hook-with-args *mode-line-click-hook* mode-line code x y))
       (win
-       (group-button-press (window-group win) x y win))))
+       (group-button-press (window-group win) button x y win))))
   ;; Pass click to client
   (xlib:allow-events *display* :replay-pointer time))
 

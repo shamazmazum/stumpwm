@@ -37,7 +37,8 @@
   "Display a menu with the active restarts and let the user pick
 one. Error is the error being recovered from. If the user aborts the
 menu, the error is re-signalled."
-  (let ((restart (select-from-menu (current-screen)
+  (let* ((*hooks-enabled-p* nil) ;;disable hooks to avoid deadlocks involving errors in *message-hook*
+         (restart (select-from-menu (current-screen)
                                    (mapcar (lambda (r)
                                              (list (format nil "[~a] ~a"
                                                            (restart-name r)
@@ -229,6 +230,7 @@ differs from RESTART, which restarts the unix process.
 
 Since the process isn't restarted, existing customizations remain
 after the restart."
+  (destroy-all-mode-lines)
   (throw :top-level :restart))
 
 (defcommand restart-hard () ()
@@ -236,6 +238,7 @@ after the restart."
 made and you wish to replace the existing process with it.
 
 Any run-time customizations will be lost after the restart."
+  (destroy-all-mode-lines)
   (throw :top-level :hup-process))
 
 (defun find-matching-windows (props all-groups all-screens)

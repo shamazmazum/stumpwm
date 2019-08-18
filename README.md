@@ -40,7 +40,7 @@ hackable desktop experience, look no further.
 
 ## Prerequisites
 
-* sbcl
+* [SBCL][sbcl]
 * quicklisp (for obtaining the following dependencies, not needed if you use your distribution's package manager.)
 * clx
 * cl-ppcre
@@ -74,6 +74,15 @@ Then, in a repl:
  (ql:quickload "cl-ppcre")
  (ql:quickload "alexandria")
 ```
+
+Note: The recommended way to install SBCL is by downloading one of their
+pre-built binaries available in their [web page][sbcl-platform-table] or build
+it from source. Please do _not_ install SBCL using your distributions package
+manager, especially Ubuntu. If you do so it is likely that you'll run into
+problems when building StumpWM due to using obsolete versions of the
+dependencies.
+
+
 ## Building
 
 Building stumpwm from git requires that you build the configure script:
@@ -124,7 +133,7 @@ that your contribution gets merged in a timely manner:
   * Try to follow an "80 column rule." The current code base does not
     follow this all the time, so don't use it as an example
   * If you export a symbol, you *must* add it to the manual.
-  * [Use lisp idioms](http://people.ace.ed.ac.uk/staff/medward2/class/moz/cm/doc/contrib/lispstyle.html)
+  * [Use lisp idioms][lisp-idioms]
   * If you are working on a major change to the internals, keep us
     informed on stumpwm-devel! Also, it will probably help if the
     changes are made and then incrementally applied to the codebase in
@@ -194,3 +203,8 @@ There's a #stumpwm channel on irc.freenode.net, too.
 
 Finally, there's our mailing list (click to sign up)
 [stumpwm-devel@nongnu.org](https://lists.nongnu.org/mailman/listinfo/stumpwm-devel).
+
+
+[lisp-idioms]: (http://web.archive.org/web/20160101153032/http://people.ace.ed.ac.uk/staff/medward2/class/moz/cm/doc/contrib/lispstyle.html)
+[sbcl]: http://sbcl.org
+[sbcl-platform-table]: http://sbcl.org/platform-table.html
