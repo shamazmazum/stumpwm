@@ -318,13 +318,14 @@ current frame and raise it."
   (let ((group (current-group)))
     (pull-other-hidden-window group)))
 
-(defcommand (pull-from-windowlist tile-group) () ()
+(defcommand (pull-from-windowlist tile-group)
+    (&optional (fmt *window-format*)) (:rest)
   "Pulls a window selected from the list of windows.
 This allows a behavior similar to Emacs' switch-to-buffer
 when selecting another window."
   (let ((pulled-window (select-window-from-menu
                         (group-windows (current-group))
-                        *window-format*)))
+                        fmt)))
     (when pulled-window
       (pull-window pulled-window))))
 
@@ -395,9 +396,11 @@ frame. Possible values are:
   "Guess at a placement rule for WINDOW and add it to the current set."
   (let* ((group (window-group window))
          (group-name (group-name group))
-         (frame-number (frame-number (window-frame window)))
+         (frame-number-or-float (if (typep window 'float-window)
+                                    :float
+                                    (frame-number (window-frame window))))
          (role (window-role window)))
-    (push (list group-name frame-number t lock
+    (push (list group-name frame-number-or-float t lock
                 :class (window-class window)
                 :instance (window-res window)
                 :title (and title (window-name window))
@@ -417,8 +420,8 @@ frame. Possible values are:
     (if match
         (progn
           (setf *window-placement-rules* (delete match *window-placement-rules*))
-          (message "Rule forgotten"))
-        (message "No matching rule"))))
+          (message "Rule forgotten."))
+        (message "No matching rule."))))
 
 (defcommand (dump-window-placement-rules tile-group) (file) ((:rest "Filename: "))
   "Dump *window-placement-rules* to FILE."
@@ -473,7 +476,7 @@ specified to override the default window formatting."
   (let* ((group (current-group))
          (frame (tile-group-current-frame group)))
     (if (null (frame-windows group frame))
-        (message "No Managed Windows")
+        (message "No Managed Windows.")
         (let ((window (select-window-from-menu (frame-sort-windows group frame) fmt)))
           (if window
               (group-focus-window group window)

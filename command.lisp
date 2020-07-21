@@ -162,7 +162,7 @@ out, an element can just be the argument type."
                              :args ',interactive-args))))))
 
 (defmacro define-stumpwm-command (name (&rest args) &body body)
-  "Deprecated. use `defcommand' instead."
+  "Deprecated. Use `defcommand' instead."
   (check-type name string)
   (setf name (intern1 name))
   `(progn
@@ -371,11 +371,12 @@ then describes the symbol."
   (multiple-value-bind (sym pkg var)
       (lookup-symbol (argument-pop-or-read input prompt))
     (if (fboundp sym)
-        (symbol-function sym)
+        sym
         (throw 'error (format nil "The symbol ~A::~A is not bound to any function."
                               (package-name pkg) var)))))
 
 (define-stumpwm-type :command (input prompt)
+
   (or (argument-pop input)
       (completing-read (current-screen)
                        prompt
@@ -383,7 +384,7 @@ then describes the symbol."
 
 (define-stumpwm-type :key-seq (input prompt)
   (labels ((update (seq)
-             (message "~a: ~{~a ~}"
+             (message "~a ~{~a ~}"
                       prompt
                       (mapcar 'print-key (reverse seq)))))
     (let ((rest (argument-pop-rest input)))
@@ -404,7 +405,7 @@ then describes the symbol."
                      :test #'string=
                      :key #'window-map-number)))
       (window-number win)
-      (throw 'error "No Such Window."))))
+      (throw 'error "No such window."))))
 
 (define-stumpwm-type :number (input prompt)
   (when-let ((n (or (argument-pop input)
@@ -490,7 +491,7 @@ then describes the symbol."
                                                   (mapcar 'group-name
                                                           (screen-groups (current-screen))))))))
     (or match
-        (throw 'error "No Such Group."))))
+        (throw 'error "No such group."))))
 
 (define-stumpwm-type :frame (input prompt)
   (declare (ignore prompt))
@@ -614,8 +615,15 @@ String arguments with spaces may be passed to the command by
 delimiting them with double quotes. A backslash can be used to escape
 double quotes or backslashes inside the string. This does not apply to
 commands taking :REST or :SHELL type arguments."
-  (let ((cmd (completing-read (current-screen) ": " (all-commands) :initial-input (or initial-input ""))))
-    (unless cmd
-      (throw 'error :abort))
-    (when (plusp (length cmd))
-      (eval-command cmd t))))
+  (let ((*input-map* (copy-structure *input-map*)))
+    (define-key *input-map* (kbd "SPC") 'input-insert-hyphen-or-space)
+    (define-key *input-map* (kbd "M-SPC") 'input-insert-space)
+    (define-key *input-map* (kbd "RET") 'input-complete-and-submit)
+    (let ((cmd (completing-read (current-screen)
+				": "
+				#'emacs-style-command-complete
+				:initial-input (or initial-input ""))))
+      (unless cmd
+	(throw 'error :abort))
+      (when (plusp (length cmd))
+	(eval-command cmd t)))))

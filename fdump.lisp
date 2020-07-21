@@ -98,7 +98,12 @@
               :current (screen-id (current-screen))))
 
 (defun dump-to-file (foo name)
-  (with-open-file (fp name :direction :output :if-exists :supersede)
+  (with-open-file (fp (merge-pathnames (ensure-directories-exist (uiop:xdg-data-home #p"stumpwm/"))
+                                       (make-pathname :type "dump"
+                                                      :name name))
+                      :direction :output
+                      :if-exists :supersede
+                      :if-does-not-exist :create)
     (with-standard-io-syntax
       (let ((*package* (find-package :stumpwm))
             (*print-pretty* t))
@@ -107,21 +112,21 @@
 (defcommand dump-group-to-file (file) ((:rest "Dump To File: "))
   "Dumps the frames of the current group of the current screen to the named file."
   (dump-to-file (dump-group (current-group)) file)
-  (message "Group dumped"))
+  (message "Group dumped."))
 
 (defcommand-alias dump-group dump-group-to-file)
 
 (defcommand dump-screen-to-file (file) ((:rest "Dump To File: "))
   "Dumps the frames of all groups of the current screen to the named file"
   (dump-to-file (dump-screen (current-screen)) file)
-  (message "Screen dumped"))
+  (message "Screen dumped."))
 
 (defcommand-alias dump-screen dump-screen-to-file)
 
 (defcommand dump-desktop-to-file (file) ((:rest "Dump To File: "))
   "Dumps the frames of all groups of all screens to the named file"
   (dump-to-file (dump-desktop) file)
-  (message "Desktop dumped"))
+  (message "Desktop dumped."))
 
 (defcommand-alias dump-desktop dump-desktop-to-file)
 
@@ -203,8 +208,12 @@
         (restore-screen screen sdump)))))
 
 (defcommand restore-from-file (file) ((:rest "Restore From File: "))
-  "Restores screen, groups, or frames from named file, depending on file's contents."
-  (let ((dump (read-dump-from-file file)))
+  "Restores screen, groups, or frames from named file, depending on file's
+contents. Defaults to the XDG_DATA_HOME location with .dump file types."
+  (let ((dump (read-dump-from-file
+               (merge-pathnames (uiop:xdg-data-home #p"stumpwm/")
+                                (make-pathname :name file
+                                               :type "dump")))))
     (typecase dump
       (gdump
        (restore-group (current-group) dump)
@@ -216,7 +225,7 @@
        (restore-desktop dump)
        (message "Desktop restored."))
       (t
-       (message "Don't know how to restore ~a" dump)))))
+       (message "Don't know how to restore ~a." dump)))))
 
 (defcommand-alias restore restore-from-file)
 

@@ -66,26 +66,31 @@
 
 (defmethod group-add-window ((group tile-group) window &key frame raise &allow-other-keys)
   ;; This is important to get the frame slot
-  (if (typep window 'float-window)
-      (call-next-method)
-      (progn
-        (change-class window 'tile-window)
-        ;; Try to put the window in the appropriate frame for the group.
-        (setf (window-frame window)
-              (or frame
-                  (when *processing-existing-windows*
-                    (find-frame group (xlib:drawable-x (window-parent window))
-                                (xlib:drawable-y (window-parent window))))
-                  (pick-preferred-frame window)))
-        (when *processing-existing-windows*
-          (setf (frame-window (window-frame window)) window))
-        (when (and frame raise)
-          (setf (tile-group-current-frame group) frame
-                (frame-window frame) nil))
-        (sync-frame-windows group (window-frame window))
-        (when (null (frame-window (window-frame window)))
-          (frame-raise-window (window-group window) (window-frame window)
-                              window nil)))))
+  (cond ((typep window 'float-window)
+         (call-next-method))
+        ((eq frame :float)
+         (change-class window 'float-window)
+         (float-window-align window)
+        (when raise
+          (group-focus-window group window)))
+        (t
+         (change-class window 'tile-window)
+         ;; Try to put the window in the appropriate frame for the group.
+         (setf (window-frame window)
+               (or frame
+                   (when *processing-existing-windows*
+                     (find-frame group (xlib:drawable-x (window-parent window))
+                                 (xlib:drawable-y (window-parent window))))
+                   (pick-preferred-frame window)))
+         (when *processing-existing-windows*
+           (setf (frame-window (window-frame window)) window))
+         (when (and frame raise)
+           (setf (tile-group-current-frame group) frame
+                 (frame-window frame) nil))
+         (sync-frame-windows group (window-frame window))
+         (when (null (frame-window (window-frame window)))
+           (frame-raise-window (window-group window) (window-frame window)
+                               window nil)))))
 
 (defmethod group-current-head ((group tile-group))
   (if-let ((current-window (group-current-window group)))
@@ -95,11 +100,12 @@
 (defmethod group-move-request ((group tile-group) (window tile-window) x y relative-to)
   (when *honor-window-moves*
     (dformat 3 "Window requested new position ~D,~D relative to ~S~%" x y relative-to)
-    (let* ((pos  (if (eq relative-to :parent)
+    (let* ((pointer-pos (multiple-value-list (xlib:global-pointer-position *display*)))
+           (pos  (if (eq relative-to :parent)
                      (list
                       (+ (xlib:drawable-x (window-parent window)) x)
                       (+ (xlib:drawable-y (window-parent window)) y))
-                     (list x y)))
+                     (list (first pointer-pos) (second pointer-pos))))
            (frame (apply #'find-frame group pos)))
       (when frame
         (pull-window window frame)))))
@@ -176,9 +182,13 @@
 
 ;; TODO: This method has not been updated for floating windows
 (defmethod group-remove-head ((group tile-group) head)
-  (let ((windows (head-windows group head)))
-    ;; Remove it from the frame tree.
-    (setf (tile-group-frame-tree group) (delete (tile-group-frame-head group head) (tile-group-frame-tree group)))
+  ;; first ensure the data is up to date
+  (group-sync-all-heads group)
+  (let ((windows (head-windows group head))
+        (frames-to-delete (tile-group-frame-head group head))
+        (group-frame-tree (tile-group-frame-tree group)))
+    ;; Remove this head's frames from the frame tree.
+    (setf (tile-group-frame-tree group) (delete frames-to-delete group-frame-tree))
     ;; Just set current frame to whatever.
     (let ((frame (first (group-frames group))))
       (setf (tile-group-current-frame group) frame
@@ -223,11 +233,9 @@
                   (group-windows-for-cycling group :sorting t))))
 
 (defun tile-group-frame-head (group head)
-  (group-sync-all-heads group)
   (elt (tile-group-frame-tree group) (position head (group-heads group))))
 
 (defun (setf tile-group-frame-head) (frame group head)
-  (group-sync-all-heads group)
   (setf (elt (tile-group-frame-tree group) (position head (group-heads group))) frame))
 
 (defun populate-frames (group)
@@ -339,7 +347,8 @@ T (default) then also focus the frame."
     (unless (and w (eq oldw w))
       (if w
           (raise-window w)
-          (mapc 'hide-window (frame-windows g f))))
+          (mapc 'hide-window
+                (reverse (frame-windows g f)))))
     ;; If raising a window in the current frame we must focus it or
     ;; the group and screen will get out of sync.
     (when (or focus
@@ -1068,6 +1077,13 @@ space."
 
 (defcommand-alias remove remove-split)
 
+(defun only-one-frame-p ()
+  "T if there is only one maximized frame in the current head.
+This can be used around a the \"only\" command to avoid the warning message."
+  (let* ((group (screen-current-group (current-screen)))
+         (head (current-head group)))
+    (atom (tile-group-frame-head group head))))
+
 (defcommand (only tile-group) () ()
   "Delete all the frames but the current one and grow it to take up the entire head."
   (let* ((screen (current-screen))
@@ -1075,7 +1091,7 @@ space."
          (win (group-current-window group))
          (head (current-head group))
          (frame (copy-frame head)))
-    (if (atom (tile-group-frame-head group head))
+    (if (only-one-frame-p)
         (message "There's only one frame.")
         (progn
           (mapc (lambda (w)
@@ -1121,10 +1137,12 @@ space."
   "Given a list of frames focus the next one in the list after
 the current frame."
   (let ((rest (cdr (member (tile-group-current-frame group) frames :test 'eq))))
-    (focus-frame group
-                 (if (null rest)
-                     (car frames)
-                     (car rest)))))
+    (if (= (length frames) 1)
+        (message "No other frames.")
+        (focus-frame group
+                     (if (null rest)
+                         (car frames)
+                         (car rest))))))
 
 (defun focus-next-frame (group)
   (focus-frame-after group (group-frames group)))
@@ -1155,32 +1173,31 @@ select one. Returns the selected frame or nil if aborted."
   (let ((wins (progn
                 (draw-frame-outlines group)
                 (draw-frame-numbers group))))
-    (multiple-value-bind (has-click ch x y)
-        (read-one-char-or-click group)
-      (if has-click
-          (let ((winner))
-            (mapc #'xlib:destroy-window wins)
-            (clear-frame-outlines group)
-            ;; frame-width and frame-height are not updated in this
-            ;; context, so we need to loop through all of them until
-            ;; we find the most satisfying one.
-            (dolist (f (group-frames group))
-              (when (and (> x (frame-x f)) (> y (frame-y f)))
-                (if winner
-                    (when (or (> (frame-x f) (frame-x winner))
-                              (> (frame-y f) (frame-y winner)))
-                      (setf winner f))
-                    (setf winner f))))
-            (ungrab-pointer)
-            winner)
-          (when ch
-            (let ((num (read-from-string (string ch) nil nil)))
-              (dformat 3 "read ~S ~S~%" ch num)
-              (mapc #'xlib:destroy-window wins)
-              (clear-frame-outlines group)
-              (find ch (group-frames group)
-                    :test 'char=
-                    :key 'get-frame-number-translation)))))))
+    (unwind-protect
+         (multiple-value-bind (has-click ch x y)
+             (read-one-char-or-click group)
+           (if has-click
+               (let ((winner))
+                 ;; frame-width and frame-height are not updated in this
+                 ;; context, so we need to loop through all of them until
+                 ;; we find the most satisfying one.
+                 (dolist (f (group-frames group))
+                   (when (and (> x (frame-x f)) (> y (frame-y f)))
+                     (if winner
+                         (when (or (> (frame-x f) (frame-x winner))
+                                   (> (frame-y f) (frame-y winner)))
+                           (setf winner f))
+                         (setf winner f))))
+                 (ungrab-pointer)
+                 winner)
+               (when ch
+                 (let ((num (read-from-string (string ch) nil nil)))
+                   (dformat 3 "read ~S ~S~%" ch num)
+                   (find ch (group-frames group)
+                         :test 'char=
+                         :key 'get-frame-number-translation)))))
+      (mapc #'xlib:destroy-window wins)
+      (clear-frame-outlines group))))
 
 
 (defcommand (fselect tile-group) (frame-number) ((:frame t))
@@ -1312,9 +1329,41 @@ direction. The following are valid directions:
         (message "There's only one frame.")
         (balance-frames-internal group tree))))
 
+(defun window-centroid (win)
+  "Return the centroid of WIN."
+  (let ((x (window-x win))
+        (y (window-y win))
+        (w (window-width win))
+        (h (window-height win)))
+    (cons (+ x (/ w 2))
+          (+ y (/ h 2)))))
+
+(defun frame-centroid (frame)
+  "Return the centroid of frame, excluding the borders."
+  (let ((x (frame-x frame))
+        (y (frame-y frame))
+        (w (frame-width frame))
+        (h (frame-height frame)))
+    (cons (+ x (/ w 2))
+          (+ y (/ h 2)))))
+
+(defun closest-frame (win group)
+  "Returns the frame closet to the window, WIN."
+  (flet ((square (n) (* n n)))
+    (let (shortest)
+      (destructuring-bind (win-x . win-y) (window-centroid win)
+        (loop :for frame :in (group-frames group)
+	      :for (frame-x . frame-y) := (frame-centroid frame)
+	      :for distance := (sqrt (+ (square (- win-x frame-x))
+					(square (- win-y frame-y))))
+	      :unless shortest
+                :do (setf shortest (cons distance frame))
+	      :when (> (car shortest) distance)
+                :do (setf shortest (cons distance frame))))
+      (cdr shortest))))
+
 (defun unfloat-window (window group)
-  ;; maybe find the frame geometrically closest to this float?
-  (let ((frame (first (group-frames group))))
+  (let ((frame (closest-frame window group)))
     (change-class window 'tile-window :frame frame)
     (setf (window-frame window) frame
           (frame-window frame) window

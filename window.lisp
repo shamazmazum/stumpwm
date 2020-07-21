@@ -324,11 +324,8 @@ _NET_WM_STATE_DEMANDS_ATTENTION set"
   (multiple-value-bind
         (name encoding)
       (xlib:get-property win :WM_NAME :result-type '(vector (unsigned-byte 8)))
-    (let ((encoding (case encoding
-                      (:string :x11-string)
-                      (:utf8_string :utf-8)
-                      (t :latin1))))
-      (if (eq encoding :x11-string)
+    (when name
+      (if (eq encoding :string)
           (safely-decode-x11-string name)
           (utf8-to-string name)))))
 
@@ -769,6 +766,8 @@ and bottom_end_x."
         do (loop for j in (screen-mapped-windows i)
                  do (xwin-grab-keys j (window-group (find-window j))))
         do (xwin-grab-keys (screen-focus-window i) (screen-current-group i)))
+  (when (current-window)
+    (remap-keys-grab-keys (current-window)))
   (xlib:display-finish-output *display*))
 
 (defun netwm-remove-window (window)
@@ -839,7 +838,7 @@ needed."
         (if (getf placement-data :raise)
           (switch-to-group (window-group window))
           (unless *suppress-window-placement-indicator*
-            (message "Placing window ~a in group ~a" (window-name window) (group-name (window-group window)))))
+            (message "Placing window ~a in group ~a." (window-name window) (group-name (window-group window)))))
         (apply 'run-hook-with-args *place-window-hook* window (window-group window) placement-data)))
     ;; must call this after the group slot is set for the window.
     (grab-keys-on-window window)
@@ -942,9 +941,13 @@ needed."
 
 (defun no-focus (group last-win)
   "don't focus any window but still read keyboard events."
-  (dformat 3 "no-focus~%")
+  (dformat 3 "NO-FOCUS called~%")
   (let* ((screen (group-screen group)))
     (setf (group-current-window group) nil)
+    ;; lame workaround to fix bug where non-focused window doesn't
+    ;; listen unless an event is caught by the listener. In this case
+    ;; a fake click is sent.
+    (xlib-fake-click (screen-root screen) (screen-focus-window screen) 1)
     (when (eq group (screen-current-group screen))
       (xlib:set-input-focus *display* (screen-focus-window screen) :POINTER-ROOT)
       (setf (screen-focus screen) nil)
@@ -1071,7 +1074,7 @@ window. Default to the current window. if
   "Override the current window's title."
   (if (current-window)
       (setf (window-user-title (current-window)) title)
-      (message "No Focused Window")))
+      (message "No Focused Window.")))
 
 (defcommand select-window (query) ((:window-name "Select: "))
   "Switch to the first window that starts with @var{query}."
@@ -1281,7 +1284,7 @@ be used to override the default window formatting."
   "Display information about the current window."
   (if (current-window)
       (message "~a" (format-expand *window-formatters* fmt (current-window)))
-      (message "No Current Window")))
+      (message "No Current Window.")))
 
 (defcommand refresh () ()
   "Refresh current window without changing its size."

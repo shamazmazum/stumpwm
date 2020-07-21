@@ -173,9 +173,20 @@
           ;; Conditions
           stumpwm-condition
           stumpwm-error
-          stumpwm-warning))
+          stumpwm-warning
+
+          ;; Completion Options
+          *maximum-completions*
+
+          ))
 
 
+;;; Completions
+(defvar *maximum-completions* 100
+  "Maximum number of completions to show in interactive prompts. Setting
+  this too high can crash the completion process due to drawing too far
+  off screen.")
+
 ;;; Message Timer
 (defvar *suppress-abort-messages* nil
   "Suppress abort message when non-nil.")
@@ -795,10 +806,10 @@ positive direction."
             min))))
 
 (defun split-seq (seq separators &key test default-value)
-  "split a sequence into sub sequences given the list of seperators."
+  "Split a sequence into subsequences given the list of seperators."
   (let ((seps separators))
     (labels ((sep (c)
-               (find c seps :test test)))
+               (position c seps :test test)))
       (or (loop for i = (position-if (complement #'sep) seq)
                 then (position-if (complement #'sep) seq :start j)
                 as j = (position-if #'sep seq :start (or i 0))
@@ -858,7 +869,7 @@ output directly to a file.")
 (defun dformat (level fmt &rest args)
   (when (>= *debug-level* level)
     (multiple-value-bind (sec m h) (get-decoded-system-time)
-      (format *debug-stream* "~2,'0d:~2,'0d:~2,'0d " h m sec))
+      (format *debug-stream* "~2,'0d:~2,'0d:~2,'0d ~2,' d " h m sec level))
     ;; strip out non base-char chars quick-n-dirty like
     (write-string (map 'string (lambda (ch)
                                  (if (typep ch 'standard-char)
@@ -1023,10 +1034,10 @@ generally set when killing text in the input bar.")
 recommended this is assigned using LET.")
 
 (defvar *suppress-echo-timeout* nil
-  "Assign this T and messages will not time out. It is recommended this is assigned using LET.")
+  "Assign this T and messages will not time out. It is recommended to assign this using LET.")
 
 (defvar *ignore-echo-timeout* nil
-  "Assign this T and the message time out won't be touched. It is recommended this is assigned using LET.")
+  "Assign this T and the message time out won't be touched. It is recommended to assign this using LET.")
 
 (defvar *run-or-raise-all-groups* t
   "When this is @code{T} the @code{run-or-raise} function searches all groups for a
@@ -1145,10 +1156,16 @@ add rules")
   "Create a rule that matches windows and automatically places them in
 a specified group and frame. Each frame rule is a lambda list:
 @example
-\(frame-number raise lock &key create restore dump-name class instance type role title)
+\(frame-number raise lock &key from-group create restore dump-name class class-not
+instance instance-not type type-not role role-not title title-not
+match-properties-and-function match-properties-or-function)
 @end example
 
 @table @var
+@item target-group
+When nil, rule applies in the current group. When non nil, @var{lock} determines
+applicability of rule
+
 @item frame-number
 The frame number to send matching windows to
 
@@ -1178,27 +1195,47 @@ When non-NIL the group is restored even if it already exists. This arg should
 be set to the dump filename to use for forced restore. Defaults to NIL
 
 @item class
-The window's class must match @var{class}.
+The windows class must match @var{class}.
+
+@item class-not
+The windows class must not match @var{class-not}
 
 @item instance
-The window's instance/resource name must match @var{instance}.
+The windows instance/resource name must match @var{instance}.
+
+@item instance-not
+The windows instance/resource name must not match @var{instance-not}.
 
 @item type
-The window's type must match @var{type}.
+The windows type must match @var{type}.
+
+@item type-not
+The windows type must not match @var{type-not}.
 
 @item role
-The window's role must match @var{role}.
+The windows role must match @var{role}.
+
+@item role-not
+The windows role must not match @var{role-not}.
 
 @item title
-The window's title must match @var{title}.
+The windows title must match @var{title}.
+
+@item title-not
+The windows title must not match @var{title-not}.
+
+@item match-properties-and-function
+A function that, if provided, must return true alongside the provided properties
+in order for the rule to match. This function takes one argument, the window.
+
+@item match-properties-or-function
+A function that, if provided and returning true, will cause the rule to match
+regardless of whether the window properties match. Takes one argument, the window.
 @end table"
   (let ((x (gensym "X")))
     `(dolist (,x ',frame-rules)
        ;; verify the correct structure
-       (destructuring-bind (frame-number raise lock
-                                         &rest keys
-                                         &key from-group create restore class instance type role title) ,x
-         (declare (ignore from-group create restore class instance type role title))
+       (destructuring-bind (frame-number raise lock &rest keys) ,x
          (push (list* ,target-group frame-number raise lock keys)
                *window-placement-rules*)))))
 

@@ -208,8 +208,7 @@ such a case, kill the shell command to resume StumpWM."
       (message "rc file loaded successfully."))))
 
 (defcommand keyboard-quit () ()
-    ""
-  ;; This way you can exit from command mode
+  "This way you can exit from command mode. Also aliased as abort."
   (let ((in-command-mode (eq *top-map* *root-map*)))
     (when (pop-top-map)
       (if in-command-mode
@@ -218,6 +217,14 @@ such a case, kill the shell command to resume StumpWM."
 
 (defcommand-alias abort keyboard-quit)
 
+(defcommand quit-confirm () ()
+  "Prompt the user to confirm quitting StumpWM."
+  (if (y-or-n-p (format nil "~@{~a~^~%~}"
+                          "You are about to quit the window manager to TTY."
+                          "Really ^1^Bquit^b^n ^B^2StumpWM^n^b?"
+                          "^B^6Confirm?^n "))
+      (quit)
+      (xlib:unmap-window (screen-message-window (current-screen)))))
 
 (defcommand quit () ()
 "Quit StumpWM."
@@ -311,7 +318,7 @@ current frame instead of switching to the window."
   (message "Reloading StumpWM...")
   #+asdf (with-restarts-menu
              (asdf:operate 'asdf:load-op :stumpwm))
-  #-asdf (message "^B^1*Sorry, StumpWM can only be reloaded with asdf (for now.)")
+  #-asdf (message "^B^1*Sorry, StumpWM can only be reloaded with asdf (for now).")
   #+asdf (message "Reloading StumpWM...^B^2*Done^n."))
 
 (defcommand emacs () ()
@@ -388,7 +395,7 @@ like xprop."
                     (:atom (format nil "~{~a~^, ~}"
                                    (mapcar (lambda (v) (xlib:atom-name *display* v)) values)))
                     (:string (format nil "~{~s~^, ~}"
-                                     (mapcar (lambda (x) (coerce (mapcar 'xlib:card8->char x) 'string))
+                                     (mapcar (lambda (x) (map 'string 'xlib:card8->char x))
                                              (split-seq values '(0)))))
                     (:utf8_string (format nil "~{~s~^, ~}"
                                           (mapcar 'utf8-to-string
