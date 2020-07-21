@@ -15,8 +15,7 @@
   :depends-on (#:alexandria
                #:cl-ppcre
                #:clx
-               #:sb-posix
-               #:clx-truetype)
+               #:sb-posix)
   :components ((:file "package")
                (:file "primitives")
                (:file "wrappers")
