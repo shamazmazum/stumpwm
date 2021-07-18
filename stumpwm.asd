@@ -65,3 +65,20 @@
                ;; anything changes
                (:file "version"))
   :in-order-to ((test-op (test-op "stumpwm-tests"))))
+
+(defsystem :stumpwm/executable
+  :name :stumpwm/executable
+  :author "Shawn Betts <sabetts@vcn.bc.ca>"
+  :version "1.0.1"
+  :maintainer "Vasily Postnicov <shamaz.mazum@gmail.com>"
+  ;; :license "GNU General Public License"
+  :depends-on (:stumpwm)
+  :build-operation program-op
+  :build-pathname "stumpwm"
+  :entry-point "stumpwm:stumpwm")
+
+#+sb-core-compression
+(defmethod asdf:perform ((o asdf:image-op) (c asdf:system))
+  (uiop:dump-image (asdf:output-file o c)
+                   :executable t
+                   :compression t))
