@@ -337,12 +337,15 @@ _NET_WM_STATE_DEMANDS_ATTENTION set"
 (defun update-configuration (win)
   ;; Send a synthetic configure-notify event so that the window
   ;; knows where it is onscreen.
-  (xwin-send-configuration-notify (window-xwin win)
-                                  (+ (xlib:drawable-x (window-parent win))
-                                     (xlib:drawable-x (window-xwin win)))
-                                  (+ (xlib:drawable-y (window-parent win))
-                                     (xlib:drawable-y (window-xwin win)))
-                                  (window-width win) (window-height win) 0))
+  (handler-case
+      (xwin-send-configuration-notify (window-xwin win)
+                                      (+ (xlib:drawable-x (window-parent win))
+                                         (xlib:drawable-x (window-xwin win)))
+                                      (+ (xlib:drawable-y (window-parent win))
+                                         (xlib:drawable-y (window-xwin win)))
+                                      (window-width win) (window-height win) 0)
+    (xlib:drawable-error (c)
+      (dformat 4 "ignore ~S in ~S on ~S" c 'update-configuration win))))
 
 ;; FIXME: should we raise the window or its parent?
 (defmethod raise-window (win)
@@ -460,7 +463,7 @@ _NET_WM_STATE_DEMANDS_ATTENTION set"
                         32))
 
 (defun xwin-state (xwin)
-  "Get the state (iconic, normal, withdraw of a window."
+  "Get the state (iconic, normal, withdrawn) of a window."
   (first (xlib:get-property xwin :WM_STATE)))
 
 (defun window-hidden-p (window)
@@ -602,15 +605,15 @@ and bottom_end_x."
 
 (defun window-width-inc (window)
   "Find out what is the correct step to change window width"
-  (or
-    (xlib:wm-size-hints-width-inc (window-normal-hints window))
-    1))
+  (or (when-let ((window-hints (window-normal-hints window)))
+        (xlib:wm-size-hints-width-inc (window-normal-hints window)))
+      1))
 
 (defun window-height-inc (window)
   "Find out what is the correct step to change window height"
-  (or
-    (xlib:wm-size-hints-height-inc (window-normal-hints window))
-    1))
+    (or (when-let ((window-hints (window-normal-hints window)))
+          (xlib:wm-size-hints-height-inc (window-normal-hints window)))
+      1))
 
 (defun set-window-geometry (win &key x y width height border-width)
   (macrolet ((update (xfn wfn v)
@@ -745,7 +748,7 @@ and bottom_end_x."
   ;; FIXME: Why doesn't grabbing button :any work? We have to
   ;; grab them one by one instead.
   (xwin-ungrab-buttons win)
-  (loop for i from 1 to 7
+  (loop for i from 1 to 32
         do (xlib:grab-button win i '(:button-press)
                              :modifiers :any
                              :owner-p nil

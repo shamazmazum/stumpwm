@@ -26,7 +26,8 @@
           stumpwm
           call-in-main-thread
           in-main-thread-p
-          push-event))
+          push-event
+          close-resources))
 
 (defvar *in-main-thread* nil
   "Dynamically bound to T during the execution of the main stumpwm function.")
@@ -222,6 +223,16 @@ further up. "
             :local)
            (t :internet)))))
 
+(defun ensure-data-dir ()
+  (ensure-directories-exist (data-dir) :mode #o700))
+
+(defun data-dir ()
+  (merge-pathnames ".stumpwm.d/" (user-homedir-pathname)))
+
+(defun close-resources ()
+  (xlib:close-display *display*)
+  (close-log))
+
 (defun stumpwm-internal (display-str)
   (multiple-value-bind (host display screen protocol) (parse-display-string display-str)
     (declare (ignore screen))
@@ -232,9 +243,8 @@ further up. "
       (unwind-protect
            (progn
              (let ((*initializing* t))
-               ;; Start hashing the user's PATH so completion is quick
-               ;; the first time they try to run a command.
-               (sb-thread:make-thread #'rehash)
+               (ensure-data-dir)
+               (open-log)
                
                ;; we need to do this first because init-screen grabs
                ;; keys
@@ -269,17 +279,45 @@ further up. "
                    (when (and netwm-id (< netwm-id (length (screen-groups s))))
                      (switch-to-group (elt (sort-groups s) netwm-id))))
                  (redraw-current-message (current-screen))))
+
+             (run-hook *pre-thread-hook*)
+
+             ;; Start hashing the user's PATH so completion is quick
+             ;; the first time they try to run a command.
+             (sb-thread:make-thread #'rehash)
+
              ;; Let's manage.
              (let ((*package* (find-package *default-package*)))
                (run-hook *start-hook*)
                (stumpwm-internal-loop)))
-        (xlib:close-display *display*))))
+        (close-resources))))
   ;; what should the top level loop do?
   :quit)
+
+(defun force-stumpwm-restart (&key (close-display t))
+  (when close-display
+    (xlib:close-display *display*))
+  (apply 'execv (first sb-ext:*posix-argv*) sb-ext:*posix-argv*))
+
+;; based on cffi version of set-signal-handler from Andrew Lyon at https://stackoverflow.com/a/10442062
+;; rewritten to use SBCL's Foreign Function Interface directly by Max-Gerd Retzlaff
+(defmacro set-signal-handler (signo &body body)
+  `(sb-alien:alien-funcall
+    (sb-alien:extern-alien "signal" (function sb-alien:void
+                                              sb-alien:int sb-alien:system-area-pointer))
+    ,signo
+    ;; callback function
+    (sb-alien:alien-sap
+     (sb-alien::alien-lambda sb-alien:void ((signum sb-alien:int))
+       (declare (ignore signum))
+       ,@body))))
 
 ;; Usage: (stumpwm)
 (defun stumpwm (&optional (display-str (or (getenv "DISPLAY") ":0")))
   "Start the stump window manager."
+  (set-signal-handler sb-posix:sighup
+    (dformat 0 "SIGHUP received: forcing immediate restart of stumpwm~%") ;; debug level 0 to "force" logging
+    (force-stumpwm-restart))
   (let ((*in-main-thread* t))
     (setf *data-dir*
           (make-pathname :directory (append (pathname-directory (user-homedir-pathname))
@@ -298,7 +336,7 @@ further up. "
               ;; the process because otherwise we get errors.
               ((eq ret :hup-process)
                (run-hook *restart-hook*)
-               (apply 'execv (first sb-ext:*posix-argv*) sb-ext:*posix-argv*))
+               (force-stumpwm-restart :close-display nil))
               ((eq ret :restart)
                (run-hook *restart-hook*))
               (t

@@ -39,8 +39,8 @@
 
 (defvar *root-map* nil
   "This is the keymap by default bound to @kbd{C-t} (along with 
- *group-root-map* and either *tile-group-root-map* or 
- *float-group-root-map*). It is known as the @dfn{prefix map}.")
+ *group-root-map* and either *tile-group-root-map*, *float-group-root-map*,
+ or *dynamic-group-map*). It is known as the @dfn{prefix map}.")
 
 (defstruct key
   keysym shift control meta alt hyper super)
@@ -182,7 +182,7 @@ others."
 (defun define-key (map key command)
   "Add a keybinding mapping for the key, @var{key}, to the command,
 @var{command}, in the specified keymap. If @var{command} is nil, remove an
-exising binding.  For example,
+existing binding.  For example,
 
 @example
 \(stumpwm:define-key stumpwm:*root-map* (stumpwm:kbd \"C-z\") \"echo Zzzzz...\")

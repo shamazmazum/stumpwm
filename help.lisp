@@ -57,7 +57,17 @@
 (defun display-bindings-for-keymaps (key-seq &rest keymaps)
   (let* ((screen (current-screen))
          (data (mapcan (lambda (map)
-                         (mapcar (lambda (b) (format nil "^5*~5a^n ~a" (print-key (binding-key b)) (binding-command b))) (kmap-bindings map)))
+                         (mapcar (lambda (b)
+                                   (let ((bound-to (binding-command b)))
+                                     (format nil "^5*~5a^n ~a"
+                                             (print-key (binding-key b))
+                                             (cond ((or (symbolp bound-to)
+                                                        (stringp bound-to))
+                                                    bound-to)
+                                                   ((kmap-p bound-to)
+                                                    "Anonymous Keymap")
+                                                   (t "Unknown")))))
+                                 (kmap-bindings map)))
                        keymaps))
          (cols (ceiling (1+ (length data))
                         (truncate (- (head-height (current-head)) (* 2 (screen-msg-border-width screen)))
@@ -96,7 +106,7 @@
 
 (defun help-key-p (keys)
   "If the key is for the help command."
-  (final-key-p keys '("?" "C-h")))
+  (final-key-p keys *help-keys*))
 
 (defun cancel-key-p (keys)
   "If a key is the cancelling key binding."

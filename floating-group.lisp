@@ -149,9 +149,10 @@
     (add-float-window group window)))
 
 (defun %float-focus-next (group)
-  (if (group-windows group)
-      (group-focus-window group (first (group-windows group)))
-      (no-focus group nil)))
+  (let ((windows (remove-if 'window-hidden-p (group-windows group))))
+    (if windows
+        (group-focus-window group (first windows))
+        (no-focus group nil))))
 
 (defmethod group-delete-window ((group float-group) (window float-window))
   (declare (ignore window))
@@ -392,13 +393,20 @@
 
 ;;; Bindings
 
-(pushnew '(float-group *float-group-top-map*) *group-top-maps*)
-(defvar *float-group-top-map* (make-sparse-keymap))
-(defvar *float-group-root-map* (make-sparse-keymap)
+(defvar *float-group-top-map* nil)
+(defvar *float-group-root-map* nil
   "Commands specific to a floating group context hang from this keymap.
 It is available as part of the @dnf{prefix map} when the active group
-is a tile group.")
+is a float group.")
 
+(fill-keymap *float-group-top-map*
+  *escape-key* '*float-group-root-map*)
+
+(fill-keymap *float-group-root-map*
+  (kbd "n")  "next"
+  (kbd "p")  "prev")
+
+(pushnew '(float-group *float-group-top-map*) *group-top-maps*)
 
 (defcommand gnew-float (name) ((:rest "Group Name: "))
   "Create a floating window group with the specified name and switch to it."

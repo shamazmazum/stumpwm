@@ -224,6 +224,12 @@
   (declare (ignore sorting))
   (only-tile-windows (call-next-method)))
 
+(defmethod group-repack-frame-numbers ((group tile-group))
+  (let ((frames (group-frames group)))
+    (loop for i from 0
+          for frame in frames
+          do (setf (frame-number frame) i))))
+
 (defmethod focus-next-window ((group tile-group))
   (focus-forward group (group-windows-for-cycling group :sorting t)))
 
@@ -1023,10 +1029,20 @@ windows used to draw the numbers in. The caller must destroy them."
 
 (defcommand (hsplit-equally tile-group) (amt)
     ((:number "Enter the number of frames: "))
+"Deprecated. Use `vsplit-uniformly' instead."
+  (split-frame-eql-parts (current-group) :row amt))
+
+(defcommand (vsplit-uniformly tile-group) (amt)
+    ((:number "Enter the number of frames: "))
 "Split current frame in n rows of equal size."
   (split-frame-eql-parts (current-group) :row amt))
 
 (defcommand (vsplit-equally tile-group) (amt)
+    ((:number "Enter the number of frames: "))
+"Deprecated. Use `hsplit-uniformly' instead."
+  (split-frame-eql-parts (current-group) :column amt))
+
+(defcommand (hsplit-uniformly tile-group) (amt)
     ((:number "Enter the number of frames: "))
 "Split current frame in n columns of equal size."
   (split-frame-eql-parts (current-group) :column amt))
@@ -1363,6 +1379,11 @@ direction. The following are valid directions:
       (cdr shortest))))
 
 (defun unfloat-window (window group)
+  (typecase group
+    (dynamic-group (dynamic-group-unfloat-window window group))
+    (tile-group  (tile-group-unfloat-window window group))))
+
+(defun tile-group-unfloat-window (window group)
   (let ((frame (closest-frame window group)))
     (change-class window 'tile-window :frame frame)
     (setf (window-frame window) frame
@@ -1372,6 +1393,11 @@ direction. The following are valid directions:
     (sync-frame-windows group frame)))
 
 (defun float-window (window group)
+  (typecase group
+    (dynamic-group (dynamic-group-float-window window group))
+    (tile-group (tile-group-float-window window group))))
+
+(defun tile-group-float-window (window group)
   (let ((frame (tile-group-current-frame group)))
     (change-class window 'float-window)
     (float-window-align window)

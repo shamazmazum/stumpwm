@@ -18,6 +18,7 @@
                #:sb-posix
                #:sb-introspect)
   :components ((:file "package")
+               (:file "debug")
                (:file "primitives")
                (:file "wrappers")
                (:file "pathnames")
@@ -58,6 +59,7 @@
                (:file "wse")
                (:file "wallpaper")
                (:file "dynamic-window")
+               (:file "dynamic-group")
                (:file "remap-keys")
                ;; keep this last so it always gets recompiled if
                ;; anything changes

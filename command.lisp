@@ -75,7 +75,7 @@ called from a keybinding or from the colon command.
 The NAME argument can be a string, or a list of two symbols. If the
 latter, the first symbol names the command, and the second indicates
 the type of group under which this command will be usable. Currently,
-tile-group and floating-group are the two possible values.
+tile-group, floating-group and dynamic-group are the possible values.
 
 INTERACTIVE-ARGS is a list of the following form: ((TYPE PROMPT) (TYPE PROMPT) ...)
 
@@ -121,6 +121,8 @@ A shell command
 The rest of the input yet to be parsed.
 @item :module
 An existing stumpwm module
+@item :rotation
+A rotation symbol. One of :CL, :CLOCKWISE, :CCL, OR :COUNTERCLOCKWISE
 @end table
 
 Note that new argument types can be created with DEFINE-STUMPWM-TYPE.
@@ -188,7 +190,12 @@ whatever it finds: a command, an alias, or nil."
            *command-hash*))
 
 (defun command-active-p (command)
-  (typep (current-group) (command-class command))
+  (declare (special *dynamic-group-blacklisted-commands*))
+  (let ((active (typep (current-group) (command-class command))))
+    (if (typep (current-group) 'dynamic-group)
+        (unless (member command *dynamic-group-blacklisted-commands*)
+          active)
+        active))
   ;; TODO: minor modes
   )
 
@@ -345,9 +352,10 @@ then describes the symbol."
       ,@body)))
 
 (define-stumpwm-type :y-or-n (input prompt)
-  (let ((s (or (argument-pop input)
-               (read-one-line (current-screen) (concat prompt "(y/n): ")))))
-    (equal s "y")))
+  (let* ((positive-responses '("y" t))
+         (s (or (argument-pop input)
+                (read-one-line (current-screen) (concat prompt "(y/n): ")))))
+    (member s positive-responses :test #'equalp)))
 
 (defun lookup-symbol (string)
   ;; FIXME: should we really use string-upcase?
@@ -392,8 +400,7 @@ then describes the symbol."
           ;; read a key sequence from the user
           (with-focus (screen-key-window (current-screen))
             (message "~a" prompt)
-            (nreverse (second (multiple-value-list
-                               (read-from-keymap (top-maps) #'update)))))))))
+            (nreverse (nth-value 1 (read-from-keymap (top-maps) #'update))))))))
 
 (define-stumpwm-type :window-number (input prompt)
   (when-let ((n (or (argument-pop input)
@@ -450,8 +457,8 @@ then describes the symbol."
                    ("down" :down)
                    ("left" :left)
                    ("right" :right)))
-         (dir (second (assoc (argument-pop-or-read input prompt values)
-                             values :test 'string-equal))))
+         (string (argument-pop-or-read input prompt (mapcar 'first values)))
+         (dir (second (assoc string values :test 'string-equal))))
     (or dir
         (throw 'error "No matching direction."))))
 
@@ -466,7 +473,8 @@ then describes the symbol."
                    ("top-left" :top-left)
                    ("bottom-right" :bottom-right)
                    ("bottom-left" :bottom-left)))
-         (gravity (second (assoc (argument-pop-or-read input prompt values) values :test 'string-equal))))
+         (string (argument-pop-or-read input prompt (mapcar 'first values)))
+         (gravity (second (assoc string values :test 'string-equal))))
     (or gravity
         (throw 'error "No matching gravity."))))
 
@@ -615,15 +623,8 @@ String arguments with spaces may be passed to the command by
 delimiting them with double quotes. A backslash can be used to escape
 double quotes or backslashes inside the string. This does not apply to
 commands taking :REST or :SHELL type arguments."
-  (let ((*input-map* (copy-structure *input-map*)))
-    (define-key *input-map* (kbd "SPC") 'input-insert-hyphen-or-space)
-    (define-key *input-map* (kbd "M-SPC") 'input-insert-space)
-    (define-key *input-map* (kbd "RET") 'input-complete-and-submit)
-    (let ((cmd (completing-read (current-screen)
-				": "
-				#'emacs-style-command-complete
-				:initial-input (or initial-input ""))))
-      (unless cmd
-	(throw 'error :abort))
-      (when (plusp (length cmd))
-	(eval-command cmd t)))))
+  (let ((cmd (completing-read (current-screen) ": " (all-commands) :initial-input (or initial-input ""))))
+    (unless cmd
+      (throw 'error :abort))
+    (when (plusp (length cmd))
+      (eval-command cmd t))))

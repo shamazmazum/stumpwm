@@ -29,6 +29,7 @@
           *suppress-frame-indicator*
           *suppress-window-placement-indicator*
           *timeout-wait*
+          *timeout-wait-multiline*
           *timeout-frame-indicator-wait*
           *frame-indicator-text*
           *frame-indicator-timer*
@@ -42,6 +43,7 @@
           *destroy-window-hook*
           *focus-window-hook*
           *place-window-hook*
+          *pre-thread-hook*
           *start-hook*
           *restart-hook*
           *quit-hook*
@@ -75,6 +77,7 @@
           *message-window-y-padding*
           *message-window-gravity*
           *message-window-real-gravity*
+          *message-window-input-gravity*
           *editor-bindings*
           *input-window-gravity*
           *normal-gravity*
@@ -195,6 +198,10 @@
   "Specifies, in seconds, how long a message will appear for. This must
 be an integer.")
 
+(defvar *timeout-wait-multiline* nil
+  "Specifies, in seconds, how long a message will more than one line will
+appear for. This must be an integer. If falsy, default to *timeout-wait*.")
+
 (defvar *timeout-frame-indicator-wait* 1
   "The amount of time a frame indicator timeout takes.")
 
@@ -269,6 +276,9 @@ arguments: the current window and the last window (could be nil).")
 (defvar *place-window-hook* '()
   "A hook called whenever a window is placed by rule. Arguments are
 window group and frame")
+
+(defvar *pre-thread-hook* '()
+  "A hook called before any threads are started. Useful if you need to fork.")
 
 (defvar *start-hook* '()
   "A hook called when stumpwm starts.")
@@ -522,6 +532,7 @@ are valid values.
 (defvar *maxsize-gravity* :center)
 (defvar *transient-gravity* :center)
 
+(declaim (type (member :message :break :abort) *top-level-error-action*))
 (defvar *top-level-error-action* :abort
   "If an error is encountered at the top level, in
 STUMPWM-INTERNAL-LOOP, then this variable decides what action
@@ -854,51 +865,6 @@ string which is split to obtain the individual regexps. "
          (pre (subseq list 0 nth))
          (post (subseq list nth)))
     (nconc pre (list item) post)))
-
-(defvar *debug-level* 0
-  "Set this variable to a number > 0 to turn on debugging. The greater the number the more debugging output.")
-
-(defvar *debug-expose-events* nil
-  "Set this variable for a visual indication of expose events on internal StumpWM windows.")
-
-(defvar *debug-stream* (make-synonym-stream '*error-output*)
-  "This is the stream debugging output is sent to. It defaults to
-*error-output*. It may be more convenient for you to pipe debugging
-output directly to a file.")
-
-(defun dformat (level fmt &rest args)
-  (when (>= *debug-level* level)
-    (multiple-value-bind (sec m h) (get-decoded-system-time)
-      (format *debug-stream* "~2,'0d:~2,'0d:~2,'0d ~2,' d " h m sec level))
-    ;; strip out non base-char chars quick-n-dirty like
-    (write-string (map 'string (lambda (ch)
-                                 (if (typep ch 'standard-char)
-                                     ch #\?))
-                       (apply 'format nil fmt args))
-                  *debug-stream*)
-    (force-output *debug-stream*)))
-
-(defvar *redirect-stream* nil
-  "This variable Keeps track of the stream all output is sent to when
-`redirect-all-output' is called so if it changes we can close it
-before reopening.")
-
-(defun redirect-all-output (file)
-  "Elect to redirect all output to the specified file. For instance,
-if you want everything to go to ~/.stumpwm.d/debug-output.txt you would
-do:
-
-@example
-(redirect-all-output (data-dir-file \"debug-output\" \"txt\"))
-@end example
-"
-  (when (typep *redirect-stream* 'file-stream)
-    (close *redirect-stream*))
-  (setf *redirect-stream* (open file :direction :output :if-exists :append :if-does-not-exist :create)
-        *error-output*    *redirect-stream*
-        *standard-output* *redirect-stream*
-        *trace-output*    *redirect-stream*
-        *debug-stream*    *redirect-stream*))
 
 ;;; 
 ;;; formatting routines
@@ -1248,7 +1214,10 @@ regardless of whether the window properties match. Takes one argument, the windo
 focus. Possible values are :ignore, :sloppy, and :click. :ignore means
 stumpwm ignores the mouse. :sloppy means input focus follows the
 mouse; the window that the mouse is in gets the focus. :click means
-input focus is transfered to the window you click on.")
+input focus is transfered to the window you click on.
+
+If *MOUSE-FOCUS-POLICY* holds any value other than those listed above,
+mouse focus will behave as though it contains :IGNORE")
 
 (defvar *root-click-focuses-frame* t
   "Set to NIL if you don't want clicking the root window to focus the frame
