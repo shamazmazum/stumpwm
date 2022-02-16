@@ -118,11 +118,7 @@ than the root window's width and height."
          (setf x (frame-x head)
                y (frame-y head)
                width (frame-width head)
-               height (frame-height head)
-               (group-raised-window (window-group win)) win)
-         (when (group-raised-window win-group)
-           (setf (xlib:window-priority (window-parent win)
-                                       (window-parent (group-raised-window win-group))) :above)))
+               height (frame-height head)))
        (return-from geometry-hints (values x y 0 0 width height 0 t)))
       ;; Adjust the defaults if the window is a transient_for window.
       ((find (window-type win) '(:transient :dialog))
@@ -330,8 +326,11 @@ when selecting another window."
     (when pulled-window
       (pull-window pulled-window))))
 
-(defun exchange-windows (win1 win2)
-  "Exchange the windows in their respective frames."
+(defgeneric exchange-windows (win1 win2)
+  (:documentation "Exchange the windows in their respective frames."))
+
+(defmethod exchange-windows ((win1 tile-window) (win2 tile-window))
+  "Exchange tile windows in their respective frames."
   (let ((f1 (window-frame win1))
         (f2 (window-frame win2)))
     (unless (eq f1 f2)
@@ -352,9 +351,7 @@ when selecting another window."
       (let* ((frame-set (group-frames (window-group win)))
              (neighbour (neighbour dir (window-frame win) frame-set)))
         (if (and neighbour (frame-window neighbour))
-            (if (typep (window-group win) 'dynamic-group)
-                (exchange-dynamic-windows win (frame-window neighbour))
-                (exchange-windows win (frame-window neighbour)))
+            (exchange-windows win (frame-window neighbour))
             (message "No window in direction ~A!" dir)))
       (message "No window in current frame!")))
 
