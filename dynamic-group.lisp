@@ -68,9 +68,12 @@
 ;; The window definition remains unchanged, as at its core it is a tile
 ;; window. All we do is add a single tag.
 
-(defclass dynamic-window (tile-window)
+(define-swm-class dynamic-window (tile-window)
   ((superfluous :initform nil
                 :accessor superfluous-window-tag)))
+
+(defmethod print-swm-object ((object dynamic-window) stream)
+  (format stream "DYNAMIC-WINDOW ~s #x~x" (window-name object) (window-id object)))
 
 (defmethod superfluous-window-p ((window dynamic-window))
   (superfluous-window-tag window))
@@ -84,7 +87,7 @@
 ;; policy to live at the class level and add a head placement policy to
 ;; determine where new windows should be placed. 
 
-(defclass dynamic-group (tile-group)
+(define-swm-class dynamic-group (tile-group)
   (;; Class allocated slots
    (head-placement-policy
     :reader dynamic-group-head-placement-policy
@@ -121,25 +124,17 @@ stack. Valid values are :left :right :top and :bottom")
 and the window stack. Valid values are any number between zero and one exclusive.")
    ;; Object allocated slots
    (head-info-alist
-    ;; TODO: Potentially update this slot to be an alist whose values is an
-    ;; array. This may make access faster. However given the size of the lists,
-    ;; this is likely to have no impact. This is an implementation specific
-    ;; question, look at sbcl specifics and decide. 
-    
-    ;; TODO: Add superfluous window tracking to this alist. This should always
-    ;; be nil, unless a window ... WAIT! Do we even need to track "superfluous"
-    ;; windows? Or, because we changed how we add windows to a group to no
-    ;; longer use condition signalling (instead calculating the max number of
-    ;; stack windows before trying to place it) can we just... idk, not track
-    ;; it? I need to do some digging and find out...
     :accessor dynamic-group-head-info-alist
     :documentation "Alist with heads as keys containing information for each
-head.  Calling ASSOC on this alist returns a list whose CAR is the head, CADR is
-the layout of the frames, CADDR is the master frame, CADDDR is the the master
-window, CADDDDR is the window stack frames, CADDDDDR is the window stack
-windows, and CADDDDDDR is the major split ratio."))
+head.  Calling ASSOC on this alist returns a list whose FIRST element is the
+head, SECOND is the layout of the frames, THIRD is the master frame, FOURTH is the
+the master window, FIFTH is the window stack frames, SIXTH is the window
+stack windows, and SEVENTH is the major split ratio."))
   (:documentation "A group type that implements dynamic tiling à la DWM with a
 single master window and a window stack."))
+
+(defmethod print-swm-object ((object dynamic-window) stream)
+  (format stream "DYNAMIC-WINDOW ~s #x~x" (window-name object) (window-id object)))
 
 (defun dynamic-group-p (thing)
   (typep thing 'dynamic-group))
@@ -314,9 +309,14 @@ the layout, master frame, the master window, and the window stack."
   (group-sync-all-heads group)
   (let* ((windows (head-windows group head))
          (frames-to-delete (tile-group-frame-head group head))
+         (list-of-frames-to-delete (if (atom frames-to-delete)
+                                       (list frames-to-delete)
+                                       (flatten frames-to-delete)))
          (group-frame-tree (tile-group-frame-tree group))
-         (new-frame? (member (tile-group-current-frame group) frames-to-delete))
-         (old-frame? (member (tile-group-last-frame group) frames-to-delete)))
+         (new-frame? (member (tile-group-current-frame group)
+                             list-of-frames-to-delete))
+         (old-frame? (member (tile-group-last-frame group)
+                             list-of-frames-to-delete)))
     ;; Remove the current heads frames
     (setf (tile-group-frame-tree group) (delete frames-to-delete group-frame-tree))
     ;; When the head removed holds the current frame, update it. 
@@ -438,14 +438,17 @@ return NIL. RATIO is a fraction to split by."
   (cond ((typep window 'float-window)
          (call-next-method)) 
         ((eq frame :float)
-         (change-class window 'float-window)
+         (dynamic-mixins:replace-class window 'float-window)
          (float-window-align window)
+         (sync-minor-modes window)
          (when raise (group-focus-window group window)))
         (t ; if were not dealing with a floating window
          (let ((head (choose-head-from-placement-policy group)))
            ;; keep all calls to change-class in the same place.x
-           (change-class window 'dynamic-window) 
-           (dynamic-group-add-window group head window)))))
+           (dynamic-mixins:replace-class window 'dynamic-window) 
+           ;; (change-class window 'dynamic-window) 
+           (dynamic-group-add-window group head window)
+           (sync-minor-modes window)))))
 
 (defmethod group-delete-window ((group dynamic-group) (window dynamic-window))
   "Delete a dynamic window from a dynamic group. For floating windows we fall
@@ -708,13 +711,18 @@ floating windows onto the stack."
                                 (append
                                  (loop for w in (head-windows group head)
                                        when (float-window-p w)
-                                         collect (change-class w 'dynamic-window))
+                                         collect w)
                                  stack-windows)
                                 stack-windows)))))
         (setf master-window nil
               stack-windows nil)
-        (loop for window in windows
-              do (dynamic-group-place-window group head window))
+        (loop with previous-floats = nil
+              for window in windows
+              do (when (float-window-p window)
+                   (push window previous-floats)
+                   (dynamic-mixins:replace-class window 'dynamic-window))
+                 (dynamic-group-place-window group head window)
+              finally (map nil #'sync-minor-modes window))
         (focus-frame group (window-frame master-window))))))
 
 ;;; Handle overflow of both heads and groups
@@ -1020,8 +1028,10 @@ window. "
       (message "Window ~A is already a floating window." window)
       (progn
         (group-delete-window group window)
-        (change-class window 'float-window)
+        (dynamic-mixins:replace-class window 'float-window)
+        ;; (change-class window 'float-window)
         (float-window-align window)
+        (sync-minor-modes window)
         (focus-all window))))
 
 (defun dynamic-group-unfloat-window (window group)
@@ -1030,8 +1040,10 @@ window. "
       (message "Window ~A is already a dynamic window." window)
       (progn
         (let ((head (window-head window)))
-          (change-class window 'dynamic-window)
-          (dynamic-group-add-window group head window)))))
+          (dynamic-mixins:replace-class window 'dynamic-window)
+          ;; (change-class window 'dynamic-window)
+          (dynamic-group-add-window group head window)
+          (sync-minor-modes window)))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -1076,13 +1088,13 @@ window. "
       "pull"
       "pull-marked"))
 
-(defcommand gnew-dynamic (name) ((:rest "Group Name: "))
+(defcommand gnew-dynamic (name) ((:rest "Group name: "))
   "Create a new dynamic group named NAME."
   (unless name 
     (throw 'error :abort))
   (add-group (current-screen) name :type 'dynamic-group))
 
-(defcommand gnewbg-dynamic (name) ((:rest "Group Name: "))
+(defcommand gnewbg-dynamic (name) ((:rest "Group name: "))
   "Create a new dynamic group named NAME in the background."
   (unless name
     (throw 'error :abort))

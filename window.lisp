@@ -56,8 +56,34 @@
 (defvar *default-transparency* 0.9
   "Default transparency for newly created windows")
 
-(defmethod print-object ((object window) stream)
-  (format stream "#S(~a ~s #x~x)" (type-of object) (window-name object) (window-id object)))
+(define-swm-class window ()
+  ((xwin    :initarg :xwin    :accessor window-xwin)
+   (width   :initarg :width   :accessor window-width)
+   (height  :initarg :height  :accessor window-height)
+   ;; these are only used to hold the requested map location.
+   (x       :initarg :x       :accessor window-x)
+   (y       :initarg :y       :accessor window-y)
+   (gravity :initform nil     :accessor window-gravity)
+   (group   :initarg :group   :accessor window-group)
+   (number  :initarg :number  :accessor window-number)
+   (parent                    :accessor window-parent)
+   (title   :initarg :title   :accessor window-title)
+   (user-title :initform nil  :accessor window-user-title)
+   (class   :initarg :class   :accessor window-class)
+   (type    :initarg :type    :accessor window-type)
+   (res     :initarg :res     :accessor window-res)
+   (role    :initarg :role    :accessor window-role)
+   (unmap-ignores :initarg :unmap-ignores :accessor window-unmap-ignores)
+   (state   :initarg :state   :accessor window-state)
+   (normal-hints :initarg :normal-hints :accessor window-normal-hints)
+   (marked  :initform nil     :accessor window-marked)
+   (plist   :initarg :plist   :accessor window-plist)
+   (fullscreen :initform nil  :accessor window-fullscreen)
+   (transparency :initform *default-transparency*
+                 :reader   window-transparency)))
+
+(defmethod print-swm-object ((object window) stream)
+  (format stream "WINDOW ~s #x~x" (window-name object) (window-id object)))
 
 ;;; Window Management API
 
@@ -655,7 +681,7 @@ and bottom_end_x."
     (unless (eq (xlib:window-map-state (window-xwin window)) :unmapped)
       (incf (window-unmap-ignores window)))
     (xlib:reparent-window (window-xwin window) master-window 0 0)
-    (xwin-grab-buttons master-window)
+    (xwin-grab-buttons xwin)
     ;;     ;; we need to update these values since they get set to 0,0 on reparent
     ;;     (setf (window-x window) 0
     ;;          (window-y window) 0)
