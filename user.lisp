@@ -401,3 +401,8 @@ like xprop."
                                           (mapcar 'utf8-to-string
                                                   (split-seq values '(0)))))
                     (t values)))))))
+
+(defparameter *swank-port* 12345)
+
+(defcommand start-swank () ()
+  (swank:create-server :port *swank-port* :dont-close t))

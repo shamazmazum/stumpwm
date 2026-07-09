@@ -18,7 +18,8 @@
                #:sb-posix
                #:sb-introspect
                #:dynamic-mixins-swm
-               #:freebsd-sysctl)
+               #:freebsd-sysctl
+               #:swank)
   :components ((:file "package")
                (:file "debug")
                (:file "primitives")
