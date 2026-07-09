@@ -1,1 +1,4 @@
 github shamazmazum/freebsd-sysctl
+github tokenrove/imago
+github shamazmazum/cl-libheif :tag v1.0.1
+github shamazmazum/jpeg-turbo

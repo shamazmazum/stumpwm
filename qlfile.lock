@@ -6,3 +6,15 @@
  (:class qlot/source/github:source-github
   :initargs (:repos "shamazmazum/freebsd-sysctl" :ref nil :branch nil :tag nil)
   :version "github-881cfb2f4c460e968d19d2ef5ef09c09700e4e40"))
+("imago" .
+ (:class qlot/source/github:source-github
+  :initargs (:repos "tokenrove/imago" :ref nil :branch nil :tag nil)
+  :version "github-ac3e5676d12f4e7fea03703113a0a24931d37cdc"))
+("cl-libheif" .
+ (:class qlot/source/github:source-github
+  :initargs (:repos "shamazmazum/cl-libheif" :ref nil :branch nil :tag "v1.0.1")
+  :version "github-6587cf1ca06996e29efa29afff068e670e351c46"))
+("jpeg-turbo" .
+ (:class qlot/source/github:source-github
+  :initargs (:repos "shamazmazum/jpeg-turbo" :ref nil :branch nil :tag nil)
+  :version "github-75d1d3f7aaa14577940a8230972508bfa3209b8a"))

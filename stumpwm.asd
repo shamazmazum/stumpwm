@@ -19,7 +19,10 @@
                #:sb-introspect
                #:dynamic-mixins-swm
                #:freebsd-sysctl
-               #:swank)
+               #:swank
+               #:imago/jpeg-turbo
+               #:imago/pngio
+               #:imago/libheif)
   :components ((:file "package")
                (:file "debug")
                (:file "primitives")
@@ -67,6 +70,7 @@
                (:file "minor-modes")
                (:file "replace-class")
                (:file "thermal-sensors-freebsd" :if-feature :freebsd)
+               (:file "wallpaper")
                ;; keep this last so it always gets recompiled if
                ;; anything changes
                (:file "version"))
