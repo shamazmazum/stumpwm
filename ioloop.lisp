@@ -193,6 +193,20 @@
 (defmethod io-loop-update ((info sbcl-io-loop) channel)
   (declare (ignore info channel)))
 
+(defun compute-timeout (timeouts)
+  (when timeouts
+    (let* ((internal-time-of-timeout (car (first timeouts)))
+           (remaining-internal-time (- internal-time-of-timeout
+                                       (get-internal-real-time)))
+           (remaining-seconds (/ remaining-internal-time
+                                 internal-time-units-per-second))
+           (s-to-us (expt 10 6))
+           (remaining-us (max
+                          (round (* remaining-seconds
+                                    s-to-us))
+                          0)))
+      (floor remaining-us s-to-us))))
+
 (defmethod io-loop ((info sbcl-io-loop) &key description)
   (let ((*current-io-loop* info))
     (with-simple-restart (:quit-ioloop "Quit I/O loop~A"
@@ -274,50 +288,36 @@
                        (with-channel-restarts (channel)
                          (io-channel-handle channel :loop)))
                      (setf timeouts (sort timeouts '< :key 'car))
-                     (flet ((compute-timeout ()
-                              (if timeouts
-                                  (let* ((internal-time-of-timeout (car (first timeouts)))
-                                         (remaining-internal-time (- internal-time-of-timeout
-                                                                     (get-internal-real-time)))
-                                         (remaining-seconds (/ remaining-internal-time
-                                                               internal-time-units-per-second))
-                                         (s-to-ms 1000000)
-                                         (remaining-ms (max
-                                                        (round (* remaining-seconds
-                                                                  s-to-ms))
-                                                        0)))
-                                    (floor remaining-ms 1000000))
-                                  (values nil nil))))
-                       ;; Actually block for events
-                       (multiple-value-bind (rval errno)
-                           (multiple-value-call #'sb-unix:unix-fast-select
-                                                (1+ maxfd)
-                                                (sb-alien:addr rfds)
-                                                (sb-alien:addr wfds)
-                                                (sb-alien:addr efds)
-                                                (compute-timeout))
-                         (declare (ignore rval))
-                         (cond ((and errno (plusp errno))
-                                (unless (eql errno sb-unix:eintr)
-                                  (dformat 1
-                                           "Unexpected ~S error: ~A~%"
-                                           'sb-unix:unix-fast-select
-                                           (sb-int:strerror errno))))
-                               (t
-                                ;; Notify channels for transpired events
-                                (maphash (lambda (fd evs)
-                                           (let ((r (sb-unix:fd-isset fd rfds))
-                                                 (w (sb-unix:fd-isset fd wfds))
-                                                 (e (sb-unix:fd-isset fd efds)))
-                                             (dolist (ev evs)
-                                               (with-channel-restarts ((cdr ev))
-                                                 (cond ((and (eq (car ev) :read)
-                                                             (or r e))
-                                                        (io-channel-handle (cdr ev) :read))
-                                                       ((and (eq (car ev) :write)
-                                                             w)
-                                                        (io-channel-handle (cdr ev) :write)))))))
-                                         ch-map)))))
+                     ;; Actually block for events
+                     (multiple-value-bind (rval errno)
+                         (multiple-value-call #'sb-unix:unix-fast-select
+                           (1+ maxfd)
+                           (sb-alien:addr rfds)
+                           (sb-alien:addr wfds)
+                           (sb-alien:addr efds)
+                           (compute-timeout timeouts))
+                       (declare (ignore rval))
+                       (cond ((and errno (plusp errno))
+                              (unless (eql errno sb-unix:eintr)
+                                (dformat 1
+                                         "Unexpected ~S error: ~A~%"
+                                         'sb-unix:unix-fast-select
+                                         (sb-int:strerror errno))))
+                             (t
+                              ;; Notify channels for transpired events
+                              (maphash (lambda (fd evs)
+                                         (let ((r (sb-unix:fd-isset fd rfds))
+                                               (w (sb-unix:fd-isset fd wfds))
+                                               (e (sb-unix:fd-isset fd efds)))
+                                           (dolist (ev evs)
+                                             (with-channel-restarts ((cdr ev))
+                                               (cond ((and (eq (car ev) :read)
+                                                           (or r e))
+                                                      (io-channel-handle (cdr ev) :read))
+                                                     ((and (eq (car ev) :write)
+                                                           w)
+                                                      (io-channel-handle (cdr ev) :write)))))))
+                                       ch-map))))
                      ;; Check for timeouts
                      (when timeouts
                        (block timeouts
