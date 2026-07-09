@@ -17,7 +17,8 @@
                #:clx
                #:sb-posix
                #:sb-introspect
-               #:dynamic-mixins-swm)
+               #:dynamic-mixins-swm
+               #:freebsd-sysctl)
   :components ((:file "package")
                (:file "debug")
                (:file "primitives")
@@ -64,6 +65,7 @@
                (:file "manual")
                (:file "minor-modes")
                (:file "replace-class")
+               (:file "thermal-sensors-freebsd" :if-feature :freebsd)
                ;; keep this last so it always gets recompiled if
                ;; anything changes
                (:file "version"))
