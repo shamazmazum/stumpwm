@@ -39,12 +39,12 @@
         (head-height (head-height head)))
 
     (if (and head (not (find head (screen-heads screen))))
-        (throw 'error "Wrong head"))
+        (error "Wrong head"))
     (if (or (> image-width head-width)
             (> image-height head-height))
-        (throw 'error "Image size mismatch"))
+        (error "Image size mismatch"))
     (if (/= image-depth screen-depth)
-        (throw 'error "Unsupported color depth"))
+        (error "Unsupported color depth"))
 
     (free-foreign-wallpaper screen)
     (let* ((root-window (screen-root screen))
