@@ -18,8 +18,8 @@
 ;; <http://www.gnu.org/licenses/>.
 
 (defpackage :stumpwm
-  (:use :cl
-        #:alexandria)
+  (:use :cl #:alexandria)
+  (:local-nicknames (#:sc #:freebsd-sysctl))
   (:shadow #:yes-or-no-p #:y-or-n-p))
 
 (defpackage :stumpwm-user

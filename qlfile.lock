@@ -4,8 +4,8 @@
   :version "2026-01-01"))
 ("freebsd-sysctl" .
  (:class qlot/source/github:source-github
-  :initargs (:repos "shamazmazum/freebsd-sysctl" :ref nil :branch nil :tag nil)
-  :version "github-881cfb2f4c460e968d19d2ef5ef09c09700e4e40"))
+  :initargs (:repos "shamazmazum/freebsd-sysctl" :ref nil :branch nil :tag "v1.1")
+  :version "github-2985e233e7723565cf2f8445990eea7e16bb102e"))
 ("imago" .
  (:class qlot/source/github:source-github
   :initargs (:repos "tokenrove/imago" :ref nil :branch nil :tag nil)

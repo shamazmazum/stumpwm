@@ -69,7 +69,7 @@
                (:file "manual")
                (:file "minor-modes")
                (:file "replace-class")
-               (:file "thermal-sensors-freebsd" :if-feature :freebsd)
+               (:file "sysctls-freebsd" :if-feature :freebsd)
                (:file "wallpaper")
                ;; keep this last so it always gets recompiled if
                ;; anything changes
